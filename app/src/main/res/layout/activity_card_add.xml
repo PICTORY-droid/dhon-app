@@ -6,7 +6,9 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- 상단 헤더 -->
+    <!-- ────────────────────────────────────────
+         상단 헤더
+         ──────────────────────────────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -27,7 +29,6 @@
             android:textSize="22sp"
             android:textStyle="bold"/>
 
-        <!-- 홈으로 가기 버튼 -->
         <androidx.cardview.widget.CardView
             android:layout_width="wrap_content"
             android:layout_height="36dp"
@@ -59,6 +60,9 @@
 
     </LinearLayout>
 
+    <!-- ────────────────────────────────────────
+         스크롤 영역
+         ──────────────────────────────────────── -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent">
@@ -69,7 +73,7 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- 명함 사진 -->
+            <!-- 명함 사진 미리보기 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="180dp"
@@ -84,14 +88,14 @@
                     android:scaleType="centerCrop"/>
             </androidx.cardview.widget.CardView>
 
-            <!-- 사진 촬영 버튼 -->
+            <!-- 사진 촬영/선택 버튼 (미니멀 회색) -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:layout_marginBottom="8dp"
+                android:layout_marginBottom="4dp"
                 app:cardCornerRadius="10dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/primary">
+                app:cardBackgroundColor="#E5E7EB">
                 <LinearLayout
                     android:id="@+id/btnTakePhoto"
                     android:layout_width="match_parent"
@@ -102,7 +106,7 @@
                         android:layout_height="wrap_content"
                         android:text="📷  명함 사진 촬영 / 선택"
                         android:textSize="15sp"
-                        android:textColor="@color/on_primary"
+                        android:textColor="#374151"
                         android:textStyle="bold"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
@@ -112,7 +116,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="전화번호 / 이메일은 자동 인식됩니다"
-                android:textColor="@color/secondary"
+                android:textColor="@color/text_secondary"
                 android:textSize="13sp"
                 android:gravity="center"
                 android:paddingTop="4dp"
@@ -279,14 +283,14 @@
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
-            <!-- 저장 버튼 -->
+            <!-- 저장 버튼 (미니멀 진회색) -->
             <androidx.cardview.widget.CardView
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
                 android:layout_marginBottom="24dp"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/primary">
+                app:cardBackgroundColor="#374151">
                 <LinearLayout
                     android:id="@+id/btnSave"
                     android:layout_width="match_parent"
@@ -297,7 +301,7 @@
                         android:layout_height="wrap_content"
                         android:text="✅  명함 저장"
                         android:textSize="17sp"
-                        android:textColor="@color/on_primary"
+                        android:textColor="#FFFFFF"
                         android:textStyle="bold"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>

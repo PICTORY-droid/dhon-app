@@ -1,8 +1,11 @@
 package com.daehyeon.dhon
 
+import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -13,11 +16,12 @@ import android.widget.ExpandableListView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class SettingActivity : AppCompatActivity() {
 
@@ -39,6 +43,16 @@ class SettingActivity : AppCompatActivity() {
     private var isAlarm2Enabled = false
     private var tempHour = 0
     private var tempMinute = 0
+
+    // ✅ 알림 권한 요청 런처
+    private val requestNotificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                Toast.makeText(this, "알림 권한이 허용됐어요! 🔔", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "알림 권한이 거부됐어요. 설정에서 허용해주세요.", Toast.LENGTH_LONG).show()
+            }
+        }
 
     private val regionData = linkedMapOf(
         "서울특별시" to linkedMapOf(
@@ -174,46 +188,58 @@ class SettingActivity : AppCompatActivity() {
 
         loadSettings()
 
-        // 홈으로 가기
+        // ✅ Android 13 이상 알림 권한 요청
+        requestNotificationPermissionIfNeeded()
+
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             startActivity(intent)
         }
 
-        // 지역 선택
         findViewById<LinearLayout>(R.id.btnSelectRegion).setOnClickListener {
             showRegionDialog()
         }
 
-        // 알림 시간 1
         findViewById<LinearLayout>(R.id.btnSelectTime1).setOnClickListener {
             showAlarmTimePicker(1)
         }
 
-        // 알림 2 켜기/끄기
         findViewById<LinearLayout>(R.id.btnToggleAlarm2).setOnClickListener {
             isAlarm2Enabled = !isAlarm2Enabled
             updateAlarm2UI()
         }
 
-        // 알림 시간 2
         findViewById<LinearLayout>(R.id.btnSelectTime2).setOnClickListener {
             showAlarmTimePicker(2)
         }
 
-        // 🔔 테스트 알림 버튼
         findViewById<LinearLayout>(R.id.btnTestWeather).setOnClickListener {
             sendTestWeatherNotification()
         }
 
-        // 저장
         findViewById<LinearLayout>(R.id.btnSave).setOnClickListener {
             saveSettings()
         }
     }
 
-    // 테스트 알림 발송
+    // ✅ 알림 권한 요청 함수
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // 이미 권한 있음
+                }
+                else -> {
+                    // 권한 요청 팝업 표시
+                    requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
+    }
+
     private fun sendTestWeatherNotification() {
         val region = prefs.getString("region", "") ?: ""
         if (region.isEmpty()) {
@@ -221,19 +247,31 @@ class SettingActivity : AppCompatActivity() {
             return
         }
 
+        // ✅ 권한 체크 후 안내
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this, Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                Toast.makeText(this, "알림 권한이 없어요! 권한을 허용해주세요.", Toast.LENGTH_LONG).show()
+                requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+
         Toast.makeText(this, "날씨 정보 가져오는 중... (10~20초 소요)", Toast.LENGTH_LONG).show()
 
         CoroutineScope(Dispatchers.IO).launch {
-            val message = WeatherService.getWeatherMessage(this@SettingActivity)
-            withContext(Dispatchers.Main) {
+            try {
+                val message = WeatherService.getWeatherMessage(this@SettingActivity)
                 WeatherNotificationHelper.showWeatherNotification(
                     this@SettingActivity, message
                 )
-                Toast.makeText(
+            } catch (e: Exception) {
+                WeatherNotificationHelper.showWeatherNotification(
                     this@SettingActivity,
-                    "테스트 알림이 발송됐어요! 상단을 확인해주세요 🔔",
-                    Toast.LENGTH_SHORT
-                ).show()
+                    "날씨 정보를 불러올 수 없어요. 인터넷 연결을 확인해주세요."
+                )
             }
         }
     }

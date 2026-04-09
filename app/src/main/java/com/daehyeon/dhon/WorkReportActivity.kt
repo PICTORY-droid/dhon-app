@@ -38,6 +38,7 @@ class WorkReportActivity : AppCompatActivity() {
     private var selectedMonth = 0
     private var selectedYear = 0
     private var monthPickerDialog: AlertDialog? = null
+    private var currentViewFolder: File? = null
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -83,7 +84,6 @@ class WorkReportActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_work_report)
 
-        // 반응형
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.navBarSpacer)) { view, insets ->
             val navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             val params = view.layoutParams
@@ -101,19 +101,29 @@ class WorkReportActivity : AppCompatActivity() {
         selectedYear = calendar.get(Calendar.YEAR)
         selectedMonth = calendar.get(Calendar.MONTH) + 1
 
-        tvCurrentMonth.text = "${selectedYear}년 ${selectedMonth}월 파일 목록"
-
         fileAdapter = FileAdapter(
             fileList,
-            onClick = { file -> openFile(file) },
-            onLongClick = { file -> showFileOptions(file) }
+            onClick = { file ->
+                if (file.isDirectory) {
+                    currentViewFolder = file
+                    loadFilesInFolder(file)
+                } else {
+                    openFile(file)
+                }
+            },
+            onLongClick = { file ->
+                if (!file.isDirectory) {
+                    showFileOptions(file)
+                }
+            }
         )
         recyclerView.adapter = fileAdapter
 
         checkAndArchiveOldFiles()
         checkAndTrashOldArchives()
         checkAndDeleteOldTrash()
-        loadFiles(selectedYear, selectedMonth)
+        createMonthFoldersIfNotExist()
+        loadMonthFolders()
 
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
@@ -121,7 +131,6 @@ class WorkReportActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // 지난서류 → ArchiveActivity (복원 경로도 같이 전달!)
         findViewById<LinearLayout>(R.id.btnArchive).setOnClickListener {
             val archivePath = File(File(filesDir, folderName), "archive").absolutePath
             val restorePath = File(filesDir, folderName).absolutePath
@@ -154,6 +163,76 @@ class WorkReportActivity : AppCompatActivity() {
             tvSortIcon.text = if (fileAdapter.isDescending) "↓" else "↑"
             fileAdapter.sortFiles()
         }
+    }
+
+    override fun onBackPressed() {
+        if (currentViewFolder != null) {
+            currentViewFolder = null
+            loadMonthFolders()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    private fun createMonthFoldersIfNotExist() {
+        val baseFolder = File(filesDir, folderName)
+        for (i in -1..36) {
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.MONTH, -i + 1)
+            val y = cal.get(Calendar.YEAR)
+            val m = cal.get(Calendar.MONTH) + 1
+            val monthFolder = File(baseFolder, "${y}년 ${m}월")
+            if (!monthFolder.exists()) monthFolder.mkdirs()
+        }
+    }
+
+    // ✅ updateDisplayList() 사용
+    private fun loadMonthFolders() {
+        val baseFolder = File(filesDir, folderName)
+        fileList.clear()
+        if (baseFolder.exists()) {
+            val monthFolders = baseFolder.listFiles()
+                ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
+                ?.sortedByDescending { it.name }
+                ?: emptyList()
+            fileList.addAll(monthFolders)
+        }
+        currentViewFolder = null
+        val totalFileCount = countAllFiles(File(filesDir, folderName))
+        tvCurrentMonth.text = "출력 일보 (${totalFileCount}개)"
+        fileAdapter.updateDisplayList()
+    }
+
+    // ✅ 월별 폴더 안 파일 목록 - 파일이므로 notifyDataSetChanged 사용
+    private fun loadFilesInFolder(folder: File) {
+        fileList.clear()
+        if (folder.exists()) {
+            val files = folder.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?: emptyList()
+            fileList.addAll(files)
+        }
+        tvCurrentMonth.text = "${folder.name} (${fileList.size}개)"
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun countAllFiles(folder: File): Int {
+        if (!folder.exists()) return 0
+        return folder.walkTopDown().filter { it.isFile }.count()
+    }
+
+    private fun loadFiles(year: Int, month: Int) {
+        val folder = File(File(filesDir, folderName), "${year}년 ${month}월")
+        fileList.clear()
+        if (folder.exists()) {
+            folder.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?.let { fileList.addAll(it) }
+        }
+        tvCurrentMonth.text = "${year}년 ${month}월 파일 목록 (${fileList.size}개)"
+        fileAdapter.notifyDataSetChanged()
     }
 
     private fun showMonthPickerDialog() {
@@ -195,6 +274,7 @@ class WorkReportActivity : AppCompatActivity() {
                 val parts = month.replace("년 ", "-").replace("월", "").split("-")
                 selectedYear = parts[0].trim().toInt()
                 selectedMonth = parts[1].trim().toInt()
+                monthPickerDialog?.dismiss()
                 openFilePicker()
             }
             containerRecent.addView(btn)
@@ -216,6 +296,7 @@ class WorkReportActivity : AppCompatActivity() {
                 val parts = month.replace("년 ", "-").replace("월", "").split("-")
                 selectedYear = parts[0].trim().toInt()
                 selectedMonth = parts[1].trim().toInt()
+                monthPickerDialog?.dismiss()
                 openFilePicker()
             }
             containerOld.addView(btn)
@@ -260,7 +341,9 @@ class WorkReportActivity : AppCompatActivity() {
         contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(destFile).use { output -> input.copyTo(output) }
         }
-        loadFiles(selectedYear, selectedMonth)
+        val savedFolder = File(File(filesDir, folderName), "${year}년 ${month}월")
+        currentViewFolder = savedFolder
+        loadFilesInFolder(savedFolder)
     }
 
     private fun getFileName(uri: Uri): String {
@@ -270,18 +353,6 @@ class WorkReportActivity : AppCompatActivity() {
             if (cursor.moveToFirst() && nameIndex >= 0) name = cursor.getString(nameIndex)
         }
         return name
-    }
-
-    private fun loadFiles(year: Int, month: Int) {
-        val folder = File(File(filesDir, folderName), "${year}년 ${month}월")
-        fileList.clear()
-        if (folder.exists()) {
-            folder.listFiles()
-                ?.sortedByDescending { it.lastModified() }
-                ?.let { fileList.addAll(it) }
-        }
-        tvCurrentMonth.text = "${year}년 ${month}월 파일 목록 (${fileList.size}개)"
-        fileAdapter.notifyDataSetChanged()
     }
 
     private fun checkAndArchiveOldFiles() {
@@ -398,8 +469,12 @@ class WorkReportActivity : AppCompatActivity() {
             val btn = Button(this).apply {
                 text = month; textSize = 15f
                 setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#1E3A8A"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
             containerRecent.addView(btn)
@@ -409,8 +484,12 @@ class WorkReportActivity : AppCompatActivity() {
             val btn = Button(this).apply {
                 text = month; textSize = 15f
                 setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#1E3A8A"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
             containerOld.addView(btn)
@@ -431,7 +510,8 @@ class WorkReportActivity : AppCompatActivity() {
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "지난서류 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles(selectedYear, selectedMonth)
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -444,7 +524,8 @@ class WorkReportActivity : AppCompatActivity() {
             file.copyTo(File(importantFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles(selectedYear, selectedMonth)
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -457,7 +538,8 @@ class WorkReportActivity : AppCompatActivity() {
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles(selectedYear, selectedMonth)
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -486,7 +568,8 @@ class WorkReportActivity : AppCompatActivity() {
                     put(MediaStore.Downloads.MIME_TYPE, mimeType)
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                val uri = contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 if (uri != null) {
                     contentResolver.openOutputStream(uri)?.use { output ->
                         file.inputStream().use { input -> input.copyTo(output) }
@@ -504,11 +587,13 @@ class WorkReportActivity : AppCompatActivity() {
                     startActivity(Intent.createChooser(shareIntent, "파일 공유"))
                 }
             } else {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS)
                 if (!downloadsDir.exists()) downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
                 file.copyTo(destFile, overwrite = true)
-                val uri = FileProvider.getUriForFile(this, "${packageName}.provider", destFile)
+                val uri = FileProvider.getUriForFile(
+                    this, "${packageName}.provider", destFile)
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = mimeType
                     putExtra(Intent.EXTRA_STREAM, uri)
@@ -525,9 +610,11 @@ class WorkReportActivity : AppCompatActivity() {
         return when {
             fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
             fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
-            fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileName.endsWith(".docx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
-            fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".xlsx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             else -> "application/octet-stream"
         }
     }

@@ -170,23 +170,31 @@ class DocsFileActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         if (currentViewFolder != null) {
-            currentViewFolder = null
-            loadFiles()
+            if (currentViewFolder?.parentFile?.name?.matches(Regex("\\d{4}년 \\d{1,2}월")) == true) {
+                val monthFolder = currentViewFolder!!.parentFile!!
+                currentViewFolder = monthFolder
+                loadFilesInFolder(monthFolder)
+            } else {
+                currentViewFolder = null
+                loadFiles()
+            }
         } else {
             super.onBackPressed()
         }
     }
 
+    // ✅ 날짜 폴더 생성 조건 완전 제거 - 월별 폴더만 생성
     private fun createMonthFoldersIfNotExist() {
         val baseFolder = File(filesDir, "docs_manage")
         val subItemFolder = File(File(baseFolder, category), subItem)
-        for (i in 0..35) {
+        for (i in -1..36) {
             val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i)
+            cal.add(Calendar.MONTH, -i + 1)
             val y = cal.get(Calendar.YEAR)
             val m = cal.get(Calendar.MONTH) + 1
             val monthFolder = File(subItemFolder, "${y}년 ${m}월")
             if (!monthFolder.exists()) monthFolder.mkdirs()
+            // ✅ 날짜 폴더 생성 코드 완전 제거
         }
     }
 
@@ -205,21 +213,36 @@ class DocsFileActivity : AppCompatActivity() {
         val totalFileCount = countAllFiles(folder)
         tvTitle.text = subItem
         tvFileCount.text = "${totalFileCount}개"
-        fileAdapter.notifyDataSetChanged()
+        fileAdapter.updateDisplayList()
     }
 
     private fun loadFilesInFolder(folder: File) {
         fileList.clear()
         if (folder.exists()) {
-            val filesInFolder = folder.listFiles()
-                ?.filter { it.isFile }
-                ?.sortedByDescending { it.lastModified() }
-                ?: emptyList()
-            fileList.addAll(filesInFolder)
+            val subDirs = folder.listFiles()?.filter { it.isDirectory } ?: emptyList()
+            if (subDirs.isNotEmpty()) {
+                fileList.addAll(subDirs.sortedByDescending { it.name })
+            } else {
+                val filesInFolder = folder.listFiles()
+                    ?.filter { it.isFile }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?: emptyList()
+                fileList.addAll(filesInFolder)
+            }
         }
-        tvTitle.text = "${subItem} > ${folder.name}"
+        tvTitle.text = buildTitlePath(folder)
         tvFileCount.text = "${fileList.size}개"
         fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun buildTitlePath(folder: File): String {
+        val parts = mutableListOf<String>()
+        var f: File? = folder
+        while (f != null && f.name != subItem) {
+            parts.add(0, f.name)
+            f = f.parentFile
+        }
+        return if (parts.isEmpty()) subItem else "$subItem > ${parts.joinToString(" > ")}"
     }
 
     private fun countAllFiles(folder: File): Int {
@@ -244,12 +267,14 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveFolderToImportant(folder: File) {
         try {
-            val importantFolder = File(File(File(filesDir, "docs_manage"), "important"), category)
-            val destFolder = File(importantFolder, "${subItem}/${folder.name}")
-            if (!destFolder.exists()) destFolder.mkdirs()
+            val importantFolder = File(
+                File(filesDir, "docs_manage"),
+                "important/$category/$subItem/${folder.name}"
+            )
+            if (!importantFolder.exists()) importantFolder.mkdirs()
             folder.listFiles()?.forEach { file ->
                 if (file.isFile) {
-                    file.copyTo(File(destFolder, file.name), overwrite = true)
+                    file.copyTo(File(importantFolder, file.name), overwrite = true)
                 }
             }
             folder.deleteRecursively()
@@ -284,12 +309,17 @@ class DocsFileActivity : AppCompatActivity() {
             .setView(dialogView)
             .setNegativeButton("취소", null)
             .create()
+
         recentMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                setTextColor(android.graphics.Color.parseColor("#374151"))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#F3F4F6"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveFolderToArchive(folder, month); archiveDialog.dismiss() }
             containerRecent.addView(btn)
@@ -298,9 +328,13 @@ class DocsFileActivity : AppCompatActivity() {
         oldMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                setTextColor(android.graphics.Color.parseColor("#374151"))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#F3F4F6"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveFolderToArchive(folder, month); archiveDialog.dismiss() }
             containerOld.addView(btn)
@@ -316,8 +350,10 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveFolderToArchive(folder: File, monthStr: String) {
         try {
-            val baseFolder = File(filesDir, "docs_manage")
-            val archiveFolder = File(File(File(baseFolder, "archive"), category), "$subItem/$monthStr/${folder.name}")
+            val archiveFolder = File(
+                File(filesDir, "docs_manage"),
+                "archive/$category/$subItem/$monthStr/${folder.name}"
+            )
             if (!archiveFolder.exists()) archiveFolder.mkdirs()
             folder.listFiles()?.forEach { file ->
                 if (file.isFile) {
@@ -335,12 +371,17 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveFolderToTrash(folder: File) {
         try {
-            val trashFolder = File(File(File(filesDir, "docs_manage"), "trash"), category)
-            val destFolder = File(trashFolder, "${subItem}/${folder.name}")
-            if (!destFolder.exists()) destFolder.mkdirs()
-            folder.listFiles()?.forEach { file ->
+            val trashFolder = File(
+                File(filesDir, "docs_manage"),
+                "trash/$category/$subItem/${folder.name}"
+            )
+            if (!trashFolder.exists()) trashFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
                 if (file.isFile) {
-                    file.copyTo(File(destFolder, file.name), overwrite = true)
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(trashFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
                 }
             }
             folder.deleteRecursively()
@@ -352,6 +393,7 @@ class DocsFileActivity : AppCompatActivity() {
         }
     }
 
+    // ✅ saveToMonth에서 날짜 선택 다이얼로그 호출 완전 제거 - 바로 파일 선택기 열기
     private fun showMonthPickerDialog() {
         val recentMonths = mutableListOf<String>()
         for (i in -1..4) {
@@ -379,15 +421,19 @@ class DocsFileActivity : AppCompatActivity() {
         recentMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
+                setTextColor(android.graphics.Color.parseColor("#374151"))
                 backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
+                    android.graphics.Color.parseColor("#F3F4F6"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 16) }
             }
-            btn.setOnClickListener { saveToMonth(month) }
+            // ✅ 월 선택 후 바로 파일 선택기 열기 (날짜 선택 없음)
+            btn.setOnClickListener {
+                monthPickerDialog?.dismiss()
+                saveToMonth(month)
+            }
             containerRecent.addView(btn)
         }
 
@@ -395,15 +441,19 @@ class DocsFileActivity : AppCompatActivity() {
         oldMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
+                setTextColor(android.graphics.Color.parseColor("#374151"))
                 backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
+                    android.graphics.Color.parseColor("#F3F4F6"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, 0, 0, 16) }
             }
-            btn.setOnClickListener { saveToMonth(month) }
+            // ✅ 월 선택 후 바로 파일 선택기 열기 (날짜 선택 없음)
+            btn.setOnClickListener {
+                monthPickerDialog?.dismiss()
+                saveToMonth(month)
+            }
             containerOld.addView(btn)
         }
 
@@ -422,13 +472,18 @@ class DocsFileActivity : AppCompatActivity() {
         monthPickerDialog?.show()
     }
 
+    // ✅ 날짜 선택 없이 바로 월 폴더에 저장
     private fun saveToMonth(monthStr: String) {
-        val baseFolder = File(filesDir, "docs_manage")
-        val folder = File(File(File(baseFolder, category), subItem), monthStr)
-        if (!folder.exists()) folder.mkdirs()
-        currentFolder = folder
+        val monthFolder = File(
+            File(filesDir, "docs_manage"),
+            "$category/$subItem/$monthStr"
+        )
+        if (!monthFolder.exists()) monthFolder.mkdirs()
+        currentFolder = monthFolder
         openFilePicker()
     }
+
+    // ✅ showDayPickerDialog 완전 제거
 
     private fun openFilePicker() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -436,7 +491,8 @@ class DocsFileActivity : AppCompatActivity() {
             type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                "application/pdf", "application/msword",
+                "application/pdf",
+                "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.ms-excel",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -480,7 +536,8 @@ class DocsFileActivity : AppCompatActivity() {
                     3 -> moveToTrash(file)
                 }
             }
-            .setNegativeButton("취소", null).show()
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun showMoveToArchiveMonthPicker(file: File) {
@@ -506,12 +563,17 @@ class DocsFileActivity : AppCompatActivity() {
             .setView(dialogView)
             .setNegativeButton("취소", null)
             .create()
+
         recentMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                setTextColor(android.graphics.Color.parseColor("#374151"))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#F3F4F6"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
             containerRecent.addView(btn)
@@ -520,9 +582,13 @@ class DocsFileActivity : AppCompatActivity() {
         oldMonths.forEach { month ->
             val btn = Button(this).apply {
                 text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+                setTextColor(android.graphics.Color.parseColor("#374151"))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    android.graphics.Color.parseColor("#F3F4F6"))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).also { it.setMargins(0, 0, 0, 16) }
             }
             btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
             containerOld.addView(btn)
@@ -538,17 +604,16 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveToArchive(file: File, monthStr: String) {
         try {
-            val baseFolder = File(filesDir, "docs_manage")
-            val archiveFolder = File(File(File(baseFolder, "archive"), category), "$subItem/$monthStr")
+            val archiveFolder = File(
+                File(filesDir, "docs_manage"),
+                "archive/$category/$subItem/$monthStr"
+            )
             if (!archiveFolder.exists()) archiveFolder.mkdirs()
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "지난서류 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            if (currentViewFolder != null) {
-                loadFilesInFolder(currentViewFolder!!)
-            } else {
-                loadFiles()
-            }
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadFiles()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -556,16 +621,16 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveToImportant(file: File) {
         try {
-            val importantFolder = File(File(File(filesDir, "docs_manage"), "important"), category)
+            val importantFolder = File(
+                File(filesDir, "docs_manage"),
+                "important/$category/$subItem"
+            )
             if (!importantFolder.exists()) importantFolder.mkdirs()
             file.copyTo(File(importantFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            if (currentViewFolder != null) {
-                loadFilesInFolder(currentViewFolder!!)
-            } else {
-                loadFiles()
-            }
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadFiles()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -573,16 +638,16 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveToTrash(file: File) {
         try {
-            val trashFolder = File(File(File(filesDir, "docs_manage"), "trash"), category)
+            val trashFolder = File(
+                File(filesDir, "docs_manage"),
+                "trash/$category/$subItem"
+            )
             if (!trashFolder.exists()) trashFolder.mkdirs()
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            if (currentViewFolder != null) {
-                loadFilesInFolder(currentViewFolder!!)
-            } else {
-                loadFiles()
-            }
+            if (currentViewFolder != null) loadFilesInFolder(currentViewFolder!!)
+            else loadFiles()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -611,7 +676,8 @@ class DocsFileActivity : AppCompatActivity() {
                     put(MediaStore.Downloads.MIME_TYPE, mimeType)
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
-                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                val uri = contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
                 if (uri != null) {
                     contentResolver.openOutputStream(uri)?.use { output ->
                         file.inputStream().use { input -> input.copyTo(output) }
@@ -629,11 +695,13 @@ class DocsFileActivity : AppCompatActivity() {
                     startActivity(Intent.createChooser(shareIntent, "파일 공유"))
                 }
             } else {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS)
                 if (!downloadsDir.exists()) downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
                 file.copyTo(destFile, overwrite = true)
-                val uri = FileProvider.getUriForFile(this, "${packageName}.provider", destFile)
+                val uri = FileProvider.getUriForFile(
+                    this, "${packageName}.provider", destFile)
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = mimeType
                     putExtra(Intent.EXTRA_STREAM, uri)
@@ -650,9 +718,11 @@ class DocsFileActivity : AppCompatActivity() {
         return when {
             fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
             fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
-            fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileName.endsWith(".docx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
-            fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".xlsx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             else -> "application/octet-stream"
         }
     }

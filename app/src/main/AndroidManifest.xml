@@ -2,9 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- 저장소 권한 (Android 9 이하) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"/>
+
+    <!-- 기본 권한 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -12,7 +15,8 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.CALL_PHONE"/>
-    <!-- 날씨 알람 추가 권한 -->
+
+    <!-- 날씨 알람 권한 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
@@ -52,27 +56,27 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <activity android:name=".WorkReportActivity"/>
-        <activity android:name=".EtcDocsActivity"/>
-        <activity android:name=".TranslateActivity"/>
-        <activity android:name=".NoticeActivity"/>
-        <activity android:name=".ImportantDocsActivity"/>
-        <activity android:name=".DocsManageActivity"/>
-        <activity android:name=".DocsSubActivity"/>
-        <activity android:name=".DocsFileActivity"/>
-        <activity android:name=".DocsImportantActivity"/>
-        <activity android:name=".DocsTrashActivity"/>
-        <activity android:name=".SettingActivity"/>
-        <activity android:name=".ArchiveActivity"/>
-        <activity android:name=".TrashActivity"/>
-        <activity android:name=".PhotoActivity"/>
-        <activity android:name=".PhotoDetailActivity"/>
-        <activity android:name=".CardActivity"/>
-        <activity android:name=".CardListActivity"/>
-        <activity android:name=".CardAddActivity"/>
-        <activity android:name=".CardDetailActivity"/>
-        <!-- 날씨 상세화면 추가 -->
-        <activity android:name=".WeatherDetailActivity"/>
+
+        <activity android:name=".WorkReportActivity" android:exported="false"/>
+        <activity android:name=".EtcDocsActivity" android:exported="false"/>
+        <activity android:name=".TranslateActivity" android:exported="false"/>
+        <activity android:name=".NoticeActivity" android:exported="false"/>
+        <activity android:name=".ImportantDocsActivity" android:exported="false"/>
+        <activity android:name=".DocsManageActivity" android:exported="false"/>
+        <activity android:name=".DocsSubActivity" android:exported="false"/>
+        <activity android:name=".DocsFileActivity" android:exported="false"/>
+        <activity android:name=".DocsImportantActivity" android:exported="false"/>
+        <activity android:name=".DocsTrashActivity" android:exported="false"/>
+        <activity android:name=".SettingActivity" android:exported="false"/>
+        <activity android:name=".ArchiveActivity" android:exported="false"/>
+        <activity android:name=".TrashActivity" android:exported="false"/>
+        <activity android:name=".PhotoActivity" android:exported="false"/>
+        <activity android:name=".PhotoDetailActivity" android:exported="false"/>
+        <activity android:name=".CardActivity" android:exported="false"/>
+        <activity android:name=".CardListActivity" android:exported="false"/>
+        <activity android:name=".CardAddActivity" android:exported="false"/>
+        <activity android:name=".CardDetailActivity" android:exported="false"/>
+        <activity android:name=".WeatherDetailActivity" android:exported="false"/>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -84,7 +88,7 @@
                 android:resource="@xml/file_paths"/>
         </provider>
 
-        <!-- 기존 아카이브 체크 리시버 -->
+        <!-- 아카이브 자동 체크 리시버 -->
         <receiver
             android:name=".ArchiveCheckReceiver"
             android:exported="true">
@@ -99,6 +103,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="com.daehyeon.dhon.WEATHER_ALARM"/>
             </intent-filter>
         </receiver>
 

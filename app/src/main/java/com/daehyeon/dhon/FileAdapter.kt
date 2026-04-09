@@ -34,15 +34,12 @@ class FileAdapter(
         val file = files[position]
 
         if (file.isDirectory) {
-            val fileCount = file.listFiles()?.filter { it.isFile }?.size ?: 0
+            val fileCount = file.walkTopDown().filter { it.isFile }.count()
             holder.tvFileIcon.text = "📁"
             holder.tvFileName.text = file.name
+            holder.tvFileName.setTextColor(android.graphics.Color.BLACK)
+            holder.tvFileName.textSize = 15f
             holder.tvFileDate.text = "${fileCount}개"
-            holder.itemView.setOnClickListener { onClick(file) }
-            holder.itemView.setOnLongClickListener {
-                onLongClick(file)
-                true
-            }
         } else {
             holder.tvFileIcon.text = when {
                 file.name.endsWith(".pdf", ignoreCase = true) -> "📕"
@@ -53,12 +50,15 @@ class FileAdapter(
                 else -> "📄"
             }
             holder.tvFileName.text = file.name
+            holder.tvFileName.setTextColor(android.graphics.Color.BLACK)
+            holder.tvFileName.textSize = 15f
             holder.tvFileDate.text = formatDate(file.lastModified())
-            holder.itemView.setOnClickListener { onClick(file) }
-            holder.itemView.setOnLongClickListener {
-                onLongClick(file)
-                true
-            }
+        }
+
+        holder.itemView.setOnClickListener { onClick(file) }
+        holder.itemView.setOnLongClickListener {
+            onLongClick(file)
+            true
         }
     }
 
@@ -66,8 +66,7 @@ class FileAdapter(
 
     private fun formatDate(timeMillis: Long): String {
         return try {
-            val sdf = SimpleDateFormat("yy년 MM월 dd일", Locale.KOREA)
-            sdf.format(Date(timeMillis))
+            SimpleDateFormat("yy년 MM월 dd일", Locale.KOREA).format(Date(timeMillis))
         } catch (e: Exception) {
             ""
         }
@@ -75,10 +74,15 @@ class FileAdapter(
 
     fun sortFiles() {
         if (isDescending) {
-            files.sortWith(compareBy<File> { it.isFile }.thenByDescending { it.lastModified() })
+            files.sortWith(compareBy<File> { it.isFile }.thenByDescending { it.name })
         } else {
-            files.sortWith(compareBy<File> { it.isFile }.thenBy { it.lastModified() })
+            files.sortWith(compareBy<File> { it.isFile }.thenBy { it.name })
         }
+        notifyDataSetChanged()
+    }
+
+    // ✅ updateDisplayList는 그냥 notifyDataSetChanged 호출
+    fun updateDisplayList() {
         notifyDataSetChanged()
     }
 }

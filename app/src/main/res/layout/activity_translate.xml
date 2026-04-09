@@ -27,7 +27,6 @@
             android:textSize="22sp"
             android:textStyle="bold"/>
 
-        <!-- 홈으로 가기 버튼 -->
         <androidx.cardview.widget.CardView
             android:layout_width="wrap_content"
             android:layout_height="36dp"
@@ -59,13 +58,14 @@
 
     </LinearLayout>
 
-    <!-- 언어 선택 탭 -->
+    <!-- 언어 선택 탭 (미니멀 회색 톤) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="16dp">
 
+        <!-- 베트남어 탭 (기본 선택) -->
         <androidx.cardview.widget.CardView
             android:layout_width="0dp"
             android:layout_height="44dp"
@@ -73,7 +73,7 @@
             android:layout_marginRight="6dp"
             app:cardCornerRadius="8dp"
             app:cardElevation="2dp"
-            app:cardBackgroundColor="@color/primary">
+            app:cardBackgroundColor="#374151">
             <LinearLayout
                 android:id="@+id/btnVietnamese"
                 android:layout_width="match_parent"
@@ -83,20 +83,21 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="🇻🇳  베트남어"
-                    android:textColor="@color/on_primary"
+                    android:textColor="#FFFFFF"
                     android:textSize="14sp"
                     android:textStyle="bold"/>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- 중국어 탭 -->
         <androidx.cardview.widget.CardView
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_weight="1"
             android:layout_marginLeft="6dp"
             app:cardCornerRadius="8dp"
-            app:cardElevation="2dp"
-            app:cardBackgroundColor="@color/surface_variant">
+            app:cardElevation="1dp"
+            app:cardBackgroundColor="#E5E7EB">
             <LinearLayout
                 android:id="@+id/btnChinese"
                 android:layout_width="match_parent"
@@ -106,7 +107,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="🇨🇳  중국어"
-                    android:textColor="@color/text_primary"
+                    android:textColor="#6B7280"
                     android:textSize="14sp"
                     android:textStyle="bold"/>
             </LinearLayout>
@@ -123,6 +124,7 @@
         android:paddingLeft="16dp"
         android:paddingRight="16dp">
 
+        <!-- 한국어 결과 -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="0dp"
@@ -154,13 +156,14 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- 외국어 번역 결과 (미니멀 회색 배경) -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp"
-            app:cardBackgroundColor="@color/primary">
+            app:cardBackgroundColor="#F3F4F6">
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
@@ -171,7 +174,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="🇻🇳  베트남어"
-                    android:textColor="#B0C4DE"
+                    android:textColor="#9CA3AF"
                     android:textSize="12sp"
                     android:layout_marginBottom="8dp"/>
                 <TextView
@@ -179,7 +182,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:text=""
-                    android:textColor="@color/on_primary"
+                    android:textColor="#374151"
                     android:textSize="18sp"
                     android:gravity="center"/>
             </LinearLayout>
@@ -187,7 +190,7 @@
 
     </LinearLayout>
 
-    <!-- 하단 버튼 영역 -->
+    <!-- 하단 버튼 영역 (미니멀 회색 톤앤매너) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -210,14 +213,15 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
+            <!-- 한국어로 말하기 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="0dp"
-                android:layout_height="52dp"
+                android:layout_height="60dp"
                 android:layout_weight="1"
                 android:layout_marginRight="6dp"
-                app:cardCornerRadius="10dp"
+                app:cardCornerRadius="12dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/primary">
+                app:cardBackgroundColor="#374151">
                 <LinearLayout
                     android:id="@+id/btnSpeakKorean"
                     android:layout_width="match_parent"
@@ -228,25 +232,26 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="🎙️"
-                        android:textSize="18sp"/>
+                        android:textSize="20sp"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="한국어로 말하기"
-                        android:textColor="@color/on_primary"
-                        android:textSize="11sp"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
                         android:textStyle="bold"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
+            <!-- 외국어로 말하기 -->
             <androidx.cardview.widget.CardView
                 android:layout_width="0dp"
-                android:layout_height="52dp"
+                android:layout_height="60dp"
                 android:layout_weight="1"
                 android:layout_marginLeft="6dp"
-                app:cardCornerRadius="10dp"
+                app:cardCornerRadius="12dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/secondary">
+                app:cardBackgroundColor="#6B7280">
                 <LinearLayout
                     android:id="@+id/btnSpeakForeign"
                     android:layout_width="match_parent"
@@ -257,14 +262,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="🎙️"
-                        android:textSize="18sp"/>
+                        android:textSize="20sp"/>
                     <TextView
                         android:id="@+id/tvForeignBtnLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="베트남어로 말하기"
-                        android:textColor="@color/on_primary"
-                        android:textSize="11sp"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
                         android:textStyle="bold"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
