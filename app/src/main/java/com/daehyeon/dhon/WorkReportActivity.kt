@@ -40,6 +40,10 @@ class WorkReportActivity : AppCompatActivity() {
     private var monthPickerDialog: AlertDialog? = null
     private var currentViewFolder: File? = null
 
+    // ✅ 토글 상태 - 절대 제거 금지
+    private var isOldFoldersExpanded = false
+    private val allMonthFolders = mutableListOf<File>()
+
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -104,16 +108,23 @@ class WorkReportActivity : AppCompatActivity() {
         fileAdapter = FileAdapter(
             fileList,
             onClick = { file ->
-                if (file.isDirectory) {
-                    currentViewFolder = file
-                    loadFilesInFolder(file)
-                } else {
-                    openFile(file)
+                when {
+                    file.name.startsWith("▶") || file.name.startsWith("▲") -> {
+                        isOldFoldersExpanded = !isOldFoldersExpanded
+                        applyToggleToFileList()
+                    }
+                    file.isDirectory -> {
+                        currentViewFolder = file
+                        loadFilesInFolder(file)
+                    }
+                    else -> openFile(file)
                 }
             },
             onLongClick = { file ->
-                if (!file.isDirectory) {
-                    showFileOptions(file)
+                if (!file.name.startsWith("▶") && !file.name.startsWith("▲")) {
+                    if (!file.isDirectory) {
+                        showFileOptions(file)
+                    }
                 }
             }
         )
@@ -122,6 +133,7 @@ class WorkReportActivity : AppCompatActivity() {
         checkAndArchiveOldFiles()
         checkAndTrashOldArchives()
         checkAndDeleteOldTrash()
+        deleteOldEmptyMonthFolders()
         createMonthFoldersIfNotExist()
         loadMonthFolders()
 
@@ -148,9 +160,12 @@ class WorkReportActivity : AppCompatActivity() {
         }
 
         findViewById<LinearLayout>(R.id.btnTrash).setOnClickListener {
+            val trashPath = File(File(filesDir, folderName), "trash").absolutePath
+            val restorePath = File(filesDir, folderName).absolutePath
             val intent = Intent(this, TrashActivity::class.java)
             intent.putExtra("folderName", folderName)
-            intent.putExtra("trashPath", File(File(filesDir, folderName), "trash").absolutePath)
+            intent.putExtra("trashPath", trashPath)
+            intent.putExtra("restorePath", restorePath)
             startActivity(intent)
         }
 
@@ -165,6 +180,11 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        loadMonthFolders()
+    }
+
     override fun onBackPressed() {
         if (currentViewFolder != null) {
             currentViewFolder = null
@@ -174,36 +194,112 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
+    // ✅ 월이 바뀔 때만 새 폴더 생성 (한 달에 한 번만)
     private fun createMonthFoldersIfNotExist() {
+        val prefs = getSharedPreferences("work_report_prefs", MODE_PRIVATE)
+        val now = Calendar.getInstance()
+        val currentYear = now.get(Calendar.YEAR)
+        val currentMonth = now.get(Calendar.MONTH) + 1
+        val currentTotal = currentYear * 12 + currentMonth
+        val lastCreatedTotal = prefs.getInt("last_created_total_wr", -1)
         val baseFolder = File(filesDir, folderName)
-        for (i in -1..36) {
+        if (lastCreatedTotal == currentTotal) {
+            for (offset in 0..2) {
+                val cal = Calendar.getInstance()
+                cal.add(Calendar.MONTH, offset)
+                val y = cal.get(Calendar.YEAR)
+                val m = cal.get(Calendar.MONTH) + 1
+                val monthFolder = File(baseFolder, "${y}년 ${m}월")
+                if (!monthFolder.exists()) monthFolder.mkdirs()
+            }
+            return
+        }
+        for (offset in 0..2) {
             val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i + 1)
+            cal.add(Calendar.MONTH, offset)
             val y = cal.get(Calendar.YEAR)
             val m = cal.get(Calendar.MONTH) + 1
             val monthFolder = File(baseFolder, "${y}년 ${m}월")
             if (!monthFolder.exists()) monthFolder.mkdirs()
         }
+        prefs.edit().putInt("last_created_total_wr", currentTotal).apply()
     }
 
-    // ✅ updateDisplayList() 사용
+    // ✅ 현재 연도 1월 이전 빈 폴더만 삭제
+    private fun deleteOldEmptyMonthFolders() {
+        val baseFolder = File(filesDir, folderName)
+        if (!baseFolder.exists()) return
+        val now = Calendar.getInstance()
+        val currentYear = now.get(Calendar.YEAR)
+        val keepFromTotal = currentYear * 12 + 1
+        baseFolder.listFiles()
+            ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
+            ?.forEach { folder ->
+                val regex = Regex("(\\d{4})년 (\\d{1,2})월")
+                val match = regex.find(folder.name) ?: return@forEach
+                val folderYear = match.groupValues[1].toInt()
+                val folderMonth = match.groupValues[2].toInt()
+                val folderTotal = folderYear * 12 + folderMonth
+                if (folderTotal < keepFromTotal) {
+                    val hasFiles = folder.walkTopDown().any { it.isFile }
+                    if (!hasFiles) folder.delete()
+                }
+            }
+    }
+
+    // ✅ 현재월~현재월+2 범위 밖은 토글 숨김
+    private fun shouldHideInToggle(folderName: String): Boolean {
+        return try {
+            val regex = Regex("(\\d{4})년 (\\d{1,2})월")
+            val match = regex.find(folderName) ?: return false
+            val folderYear = match.groupValues[1].toInt()
+            val folderMonth = match.groupValues[2].toInt()
+            val folderTotal = folderYear * 12 + folderMonth
+            val now = Calendar.getInstance()
+            val currentTotal = now.get(Calendar.YEAR) * 12 + (now.get(Calendar.MONTH) + 1)
+            folderTotal < currentTotal || folderTotal > currentTotal + 2
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // ✅ 토글 적용
+    private fun applyToggleToFileList() {
+        fileList.clear()
+        val visibleFolders = allMonthFolders.filter { !shouldHideInToggle(it.name) }
+        val hiddenFolders = allMonthFolders.filter { shouldHideInToggle(it.name) }
+        fileList.addAll(visibleFolders)
+        if (hiddenFolders.isNotEmpty()) {
+            val toggleLabel = if (isOldFoldersExpanded)
+                "▲ 이전 기록 닫기 (${hiddenFolders.size}개)"
+            else
+                "▶ 이전 기록 보기 (${hiddenFolders.size}개)"
+            val baseFolder = File(filesDir, folderName)
+            val toggleFile = File(baseFolder, toggleLabel)
+            fileList.add(toggleFile)
+            if (isOldFoldersExpanded) {
+                fileList.addAll(hiddenFolders)
+            }
+        }
+        fileAdapter.notifyDataSetChanged()
+    }
+
     private fun loadMonthFolders() {
         val baseFolder = File(filesDir, folderName)
-        fileList.clear()
+        allMonthFolders.clear()
         if (baseFolder.exists()) {
-            val monthFolders = baseFolder.listFiles()
+            val folders = baseFolder.listFiles()
                 ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
                 ?.sortedByDescending { it.name }
                 ?: emptyList()
-            fileList.addAll(monthFolders)
+            allMonthFolders.addAll(folders)
         }
         currentViewFolder = null
         val totalFileCount = countAllFiles(File(filesDir, folderName))
         tvCurrentMonth.text = "출력 일보 (${totalFileCount}개)"
-        fileAdapter.updateDisplayList()
+        applyToggleToFileList()
     }
 
-    // ✅ 월별 폴더 안 파일 목록 - 파일이므로 notifyDataSetChanged 사용
     private fun loadFilesInFolder(folder: File) {
         fileList.clear()
         if (folder.exists()) {
@@ -220,19 +316,6 @@ class WorkReportActivity : AppCompatActivity() {
     private fun countAllFiles(folder: File): Int {
         if (!folder.exists()) return 0
         return folder.walkTopDown().filter { it.isFile }.count()
-    }
-
-    private fun loadFiles(year: Int, month: Int) {
-        val folder = File(File(filesDir, folderName), "${year}년 ${month}월")
-        fileList.clear()
-        if (folder.exists()) {
-            folder.listFiles()
-                ?.filter { it.isFile }
-                ?.sortedByDescending { it.lastModified() }
-                ?.let { fileList.addAll(it) }
-        }
-        tvCurrentMonth.text = "${year}년 ${month}월 파일 목록 (${fileList.size}개)"
-        fileAdapter.notifyDataSetChanged()
     }
 
     private fun showMonthPickerDialog() {
@@ -252,7 +335,6 @@ class WorkReportActivity : AppCompatActivity() {
             val m = cal.get(Calendar.MONTH) + 1
             oldMonths.add("${y}년 ${m}월")
         }
-
         val dialogView = layoutInflater.inflate(R.layout.dialog_month_picker, null)
         val containerRecent = dialogView.findViewById<LinearLayout>(R.id.containerRecent)
         val containerOld = dialogView.findViewById<LinearLayout>(R.id.containerOld)
@@ -279,7 +361,6 @@ class WorkReportActivity : AppCompatActivity() {
             }
             containerRecent.addView(btn)
         }
-
         scrollOld.visibility = View.GONE
         oldMonths.forEach { month ->
             val btn = Button(this).apply {
@@ -301,14 +382,12 @@ class WorkReportActivity : AppCompatActivity() {
             }
             containerOld.addView(btn)
         }
-
         var isOldVisible = false
         btnToggle.setOnClickListener {
             isOldVisible = !isOldVisible
             scrollOld.visibility = if (isOldVisible) View.VISIBLE else View.GONE
             btnToggle.text = if (isOldVisible) "▲ 이전 기록 닫기" else "▶ 이전 기록 보기"
         }
-
         monthPickerDialog = AlertDialog.Builder(this)
             .setTitle("몇 월 폴더에 저장할까요?")
             .setView(dialogView)
@@ -366,7 +445,9 @@ class WorkReportActivity : AppCompatActivity() {
                 if (year == currentYear && month >= currentMonth) continue
                 val monthFolder = File(baseFolder, "${year}년 ${month}월")
                 if (monthFolder.exists() && !monthFolder.listFiles().isNullOrEmpty()) {
-                    val archiveFolder = File(File(File(baseFolder, "archive"), "${year}년"), "${month}월")
+                    val archiveFolder = File(
+                        File(File(baseFolder, "archive"), "${year}년"), "${month}월"
+                    )
                     if (!archiveFolder.exists()) {
                         archiveFolder.mkdirs()
                         monthFolder.listFiles()?.forEach { file ->
@@ -394,10 +475,13 @@ class WorkReportActivity : AppCompatActivity() {
         archiveFolder.listFiles()?.forEach { yearFolder ->
             val year = yearFolder.name.replace("년", "").trim().toIntOrNull() ?: return@forEach
             yearFolder.listFiles()?.forEach { monthFolder ->
-                val month = monthFolder.name.replace("월", "").trim().toIntOrNull() ?: return@forEach
+                val month =
+                    monthFolder.name.replace("월", "").trim().toIntOrNull() ?: return@forEach
                 val monthsDiff = (currentYear - year) * 12 + (currentMonth - month)
                 if (monthsDiff >= 12) {
-                    val trashFolder = File(File(File(baseFolder, "trash"), "${year}년"), "${month}월")
+                    val trashFolder = File(
+                        File(File(baseFolder, "trash"), "${year}년"), "${month}월"
+                    )
                     if (!trashFolder.exists()) {
                         trashFolder.mkdirs()
                         monthFolder.listFiles()?.forEach { file ->
@@ -427,6 +511,7 @@ class WorkReportActivity : AppCompatActivity() {
             .forEach { it.delete() }
     }
 
+    // ✅ 월 팝업 없이 파일이 속한 월 폴더명 자동 사용
     private fun showFileOptions(file: File) {
         val options = arrayOf("공유하기", "지난서류로 이동", "중요 보관함으로 이동", "휴지통으로 이동")
         AlertDialog.Builder(this)
@@ -434,7 +519,7 @@ class WorkReportActivity : AppCompatActivity() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> shareFile(file)
-                    1 -> showMoveToArchiveMonthPicker(file)
+                    1 -> moveToArchive(file)
                     2 -> moveToImportant(file)
                     3 -> moveToTrash(file)
                 }
@@ -442,70 +527,15 @@ class WorkReportActivity : AppCompatActivity() {
             .setNegativeButton("취소", null).show()
     }
 
-    private fun showMoveToArchiveMonthPicker(file: File) {
-        val recentMonths = mutableListOf<String>()
-        for (i in -1..4) {
-            val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i + 1)
-            recentMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
-        }
-        val oldMonths = mutableListOf<String>()
-        for (i in 6..36) {
-            val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i + 1)
-            oldMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
-        }
-        val dialogView = layoutInflater.inflate(R.layout.dialog_month_picker, null)
-        val containerRecent = dialogView.findViewById<LinearLayout>(R.id.containerRecent)
-        val containerOld = dialogView.findViewById<LinearLayout>(R.id.containerOld)
-        val btnToggle = dialogView.findViewById<Button>(R.id.btnToggle)
-        val scrollOld = dialogView.findViewById<ScrollView>(R.id.scrollOld)
-        val archiveDialog = AlertDialog.Builder(this)
-            .setTitle("지난서류 보관함 - 월 선택")
-            .setView(dialogView)
-            .setNegativeButton("취소", null)
-            .create()
-        recentMonths.forEach { month ->
-            val btn = Button(this).apply {
-                text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.setMargins(0, 0, 0, 16) }
-            }
-            btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
-            containerRecent.addView(btn)
-        }
-        scrollOld.visibility = View.GONE
-        oldMonths.forEach { month ->
-            val btn = Button(this).apply {
-                text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.setMargins(0, 0, 0, 16) }
-            }
-            btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
-            containerOld.addView(btn)
-        }
-        var isOldVisible = false
-        btnToggle.setOnClickListener {
-            isOldVisible = !isOldVisible
-            scrollOld.visibility = if (isOldVisible) View.VISIBLE else View.GONE
-            btnToggle.text = if (isOldVisible) "▲ 이전 기록 닫기" else "▶ 이전 기록 보기"
-        }
-        archiveDialog.show()
-    }
-
-    private fun moveToArchive(file: File, monthStr: String) {
+    // ✅ 월 팝업 제거: 파일이 속한 월 폴더명을 그대로 archive 경로에 사용
+    private fun moveToArchive(file: File) {
         try {
-            val archiveFolder = File(File(File(filesDir, folderName), "archive"), monthStr)
+            val monthFolderName = file.parentFile?.name ?: ""
+            val archiveFolder = if (monthFolderName.matches(Regex("\\d{4}년 \\d{1,2}월"))) {
+                File(File(File(filesDir, folderName), "archive"), monthFolderName)
+            } else {
+                File(File(filesDir, folderName), "archive")
+            }
             if (!archiveFolder.exists()) archiveFolder.mkdirs()
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
             file.delete()
@@ -531,9 +561,15 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
+    // ✅ 복원 기능 유지: 월별 폴더명 포함하여 휴지통 저장
     private fun moveToTrash(file: File) {
         try {
-            val trashFolder = File(File(filesDir, folderName), "trash")
+            val monthFolderName = file.parentFile?.name ?: ""
+            val trashFolder = if (monthFolderName.matches(Regex("\\d{4}년 \\d{1,2}월"))) {
+                File(File(File(filesDir, folderName), "trash"), monthFolderName)
+            } else {
+                File(File(filesDir, folderName), "trash")
+            }
             if (!trashFolder.exists()) trashFolder.mkdirs()
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()

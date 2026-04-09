@@ -33,6 +33,22 @@ class FileAdapter(
     override fun onBindViewHolder(holder: FileViewHolder, position: Int) {
         val file = files[position]
 
+        // ✅ 토글 더미 항목 처리 (▶ 또는 ▲ 로 시작하는 항목)
+        // 날짜 표시 안 하고, 아이콘만 표시
+        if (file.name.startsWith("▶") || file.name.startsWith("▲")) {
+            holder.tvFileIcon.text = ""
+            holder.tvFileName.text = file.name
+            holder.tvFileName.setTextColor(android.graphics.Color.parseColor("#374151"))
+            holder.tvFileName.textSize = 14f
+            holder.tvFileDate.text = ""  // ✅ 날짜 완전히 숨김
+            holder.itemView.setOnClickListener { onClick(file) }
+            holder.itemView.setOnLongClickListener {
+                onLongClick(file)
+                true
+            }
+            return
+        }
+
         if (file.isDirectory) {
             val fileCount = file.walkTopDown().filter { it.isFile }.count()
             holder.tvFileIcon.text = "📁"
@@ -65,6 +81,8 @@ class FileAdapter(
     override fun getItemCount() = files.size
 
     private fun formatDate(timeMillis: Long): String {
+        // ✅ timeMillis가 0이면 빈 문자열 반환 (1970년 01월 01일 방지)
+        if (timeMillis == 0L) return ""
         return try {
             SimpleDateFormat("yy년 MM월 dd일", Locale.KOREA).format(Date(timeMillis))
         } catch (e: Exception) {
@@ -81,7 +99,6 @@ class FileAdapter(
         notifyDataSetChanged()
     }
 
-    // ✅ updateDisplayList는 그냥 notifyDataSetChanged 호출
     fun updateDisplayList() {
         notifyDataSetChanged()
     }

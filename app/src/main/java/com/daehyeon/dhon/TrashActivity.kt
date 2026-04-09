@@ -19,14 +19,17 @@ class TrashActivity : AppCompatActivity() {
     private lateinit var fileAdapter: FileAdapter
     private val fileList = mutableListOf<File>()
     private var folderName = "work_report"
+    // ✅ 복원 경로 추가 (WorkReportActivity에서 전달받음)
+    private var restorePath = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_trash)
 
         folderName = intent.getStringExtra("folderName") ?: "work_report"
+        // ✅ restorePath 받기
+        restorePath = intent.getStringExtra("restorePath") ?: ""
 
-        // 반응형: 시스템 네비게이션 바 높이 자동 적용
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.navBarSpacer)) { view, insets ->
             val navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             val params = view.layoutParams
@@ -57,6 +60,12 @@ class TrashActivity : AppCompatActivity() {
         )
         recyclerView.adapter = fileAdapter
 
+        loadFiles()
+    }
+
+    // ✅ onResume: 복원 후 돌아왔을 때 목록 자동 갱신
+    override fun onResume() {
+        super.onResume()
         loadFiles()
     }
 
@@ -111,14 +120,43 @@ class TrashActivity : AppCompatActivity() {
             .show()
     }
 
+    // ✅ 핵심 수정: 원래 월별 폴더에 복원
     private fun restoreFile(file: File) {
         try {
-            val restoreFolder = File(File(filesDir, folderName), "restored")
-            if (!restoreFolder.exists()) restoreFolder.mkdirs()
-            file.copyTo(File(restoreFolder, file.name), overwrite = true)
+            // 복원 기본 경로 결정
+            val baseRestoreFolder = if (restorePath.isNotEmpty()) {
+                File(restorePath)
+            } else {
+                File(filesDir, folderName)
+            }
+
+            // ✅ 휴지통 안에서 파일의 부모 폴더명 확인
+            // 예: trash/2026년 4월/파일명 → 부모 = "2026년 4월"
+            val parentName = file.parentFile?.name ?: ""
+            val grandParentName = file.parentFile?.parentFile?.name ?: ""
+
+            val targetFolder = when {
+                // 월별 폴더 안에 있는 파일: "2026년 4월" 형식
+                parentName.matches(Regex("\\d{4}년 \\d{1,2}월")) -> {
+                    File(baseRestoreFolder, parentName)
+                }
+                // 연도/월 2단계 폴더 구조: "2026년/4월" 형식
+                parentName.contains("월") && grandParentName.contains("년") -> {
+                    val yearStr = grandParentName.replace("년", "").trim()
+                    val monthStr = parentName.replace("월", "").trim()
+                    File(baseRestoreFolder, "${yearStr}년 ${monthStr}월")
+                }
+                // 그 외: 기본 복원 폴더로
+                else -> baseRestoreFolder
+            }
+
+            if (!targetFolder.exists()) targetFolder.mkdirs()
+            file.copyTo(File(targetFolder, file.name), overwrite = true)
             file.delete()
-            Toast.makeText(this, "복원했어요!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "'${file.name}' 을 복원했어요!", Toast.LENGTH_SHORT).show()
+            // ✅ 복원 후 휴지통 목록 갱신
             loadFiles()
+
         } catch (e: Exception) {
             Toast.makeText(this, "복원 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -155,9 +193,11 @@ class TrashActivity : AppCompatActivity() {
         return when {
             fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
             fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
-            fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileName.endsWith(".docx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
-            fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".xlsx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             else -> "application/octet-stream"
         }
     }

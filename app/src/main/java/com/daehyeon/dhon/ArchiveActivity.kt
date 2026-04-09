@@ -95,6 +95,7 @@ class ArchiveActivity : AppCompatActivity() {
             .show()
     }
 
+    // ✅ 핵심 수정: finish()만 호출, WorkReportActivity 강제이동 제거
     private fun restoreFile(file: File) {
         try {
             val baseRestoreFolder = if (restorePath.isNotEmpty()) {
@@ -107,11 +108,11 @@ class ArchiveActivity : AppCompatActivity() {
             val grandParentName = file.parentFile?.parentFile?.name ?: ""
 
             val targetFolder = when {
-                // 수동이동: archive/2026년 4월/파일.pdf
-                parentName.contains("년") && parentName.contains("월") -> {
+                // "2026년 4월" 형식
+                parentName.matches(Regex("\\d{4}년 \\d{1,2}월")) -> {
                     File(baseRestoreFolder, parentName)
                 }
-                // 자동이동: archive/2026년/4월/파일.pdf
+                // "2026년/4월" 형식
                 parentName.contains("월") && grandParentName.contains("년") -> {
                     val yearStr = grandParentName.replace("년", "").trim()
                     val monthStr = parentName.replace("월", "").trim()
@@ -124,11 +125,7 @@ class ArchiveActivity : AppCompatActivity() {
             file.copyTo(File(targetFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "원래 폴더로 복원됐어요!", Toast.LENGTH_SHORT).show()
-
-            // 복원 후 WorkReportActivity 로 이동해서 목록 새로고침
-            val intent = Intent(this, WorkReportActivity::class.java)
-            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            startActivity(intent)
+            // ✅ finish()만 호출 → 이전 Activity의 onResume()에서 자동 갱신
             finish()
 
         } catch (e: Exception) {
@@ -216,9 +213,11 @@ class ArchiveActivity : AppCompatActivity() {
         return when {
             fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
             fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
-            fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileName.endsWith(".docx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
-            fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".xlsx", ignoreCase = true) ->
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             else -> "application/octet-stream"
         }
     }
