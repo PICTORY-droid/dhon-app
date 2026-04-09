@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -24,7 +25,6 @@ import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
-import android.widget.Button
 
 class DocsFileActivity : AppCompatActivity() {
 
@@ -39,6 +39,7 @@ class DocsFileActivity : AppCompatActivity() {
     private var subItem = ""
     private var currentFolder: File? = null
     private var monthPickerDialog: AlertDialog? = null
+    private var currentViewFolder: File? = null
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -84,7 +85,6 @@ class DocsFileActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_docs_file)
 
-        // 반응형
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.navBarSpacer)) { view, insets ->
             val navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
             val params = view.layoutParams
@@ -106,8 +106,21 @@ class DocsFileActivity : AppCompatActivity() {
 
         fileAdapter = FileAdapter(
             fileList,
-            onClick = { file -> openFile(file) },
-            onLongClick = { file -> showFileOptions(file) }
+            onClick = { file ->
+                if (file.isDirectory) {
+                    currentViewFolder = file
+                    loadFilesInFolder(file)
+                } else {
+                    openFile(file)
+                }
+            },
+            onLongClick = { file ->
+                if (file.isDirectory) {
+                    showFolderOptions(file)
+                } else {
+                    showFileOptions(file)
+                }
+            }
         )
         recyclerView.adapter = fileAdapter
 
@@ -117,7 +130,6 @@ class DocsFileActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // 지난서류 → ArchiveActivity 로 이동 (팝업 아님!)
         findViewById<LinearLayout>(R.id.btnArchive).setOnClickListener {
             val archivePath = File(
                 File(File(File(filesDir, "docs_manage"), "archive"), category), subItem
@@ -128,7 +140,6 @@ class DocsFileActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // 중요보관함 → ImportantDocsActivity 로 이동
         findViewById<LinearLayout>(R.id.btnImportant).setOnClickListener {
             val intent = Intent(this, DocsImportantActivity::class.java)
             intent.putExtra("category", category)
@@ -136,7 +147,6 @@ class DocsFileActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // 휴지통 → DocsTrashActivity 로 이동
         findViewById<LinearLayout>(R.id.btnTrash).setOnClickListener {
             val intent = Intent(this, DocsTrashActivity::class.java)
             intent.putExtra("category", category)
@@ -154,7 +164,192 @@ class DocsFileActivity : AppCompatActivity() {
             fileAdapter.sortFiles()
         }
 
+        createMonthFoldersIfNotExist()
         loadFiles()
+    }
+
+    override fun onBackPressed() {
+        if (currentViewFolder != null) {
+            currentViewFolder = null
+            loadFiles()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    private fun createMonthFoldersIfNotExist() {
+        val baseFolder = File(filesDir, "docs_manage")
+        val subItemFolder = File(File(baseFolder, category), subItem)
+        for (i in 0..35) {
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.MONTH, -i)
+            val y = cal.get(Calendar.YEAR)
+            val m = cal.get(Calendar.MONTH) + 1
+            val monthFolder = File(subItemFolder, "${y}년 ${m}월")
+            if (!monthFolder.exists()) monthFolder.mkdirs()
+        }
+    }
+
+    private fun loadFiles() {
+        val baseFolder = File(filesDir, "docs_manage")
+        val folder = File(File(baseFolder, category), subItem)
+        fileList.clear()
+        if (folder.exists()) {
+            val subFolders = folder.listFiles()
+                ?.filter { it.isDirectory }
+                ?.sortedByDescending { it.name }
+                ?: emptyList()
+            fileList.addAll(subFolders)
+        }
+        currentViewFolder = null
+        val totalFileCount = countAllFiles(folder)
+        tvTitle.text = subItem
+        tvFileCount.text = "${totalFileCount}개"
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun loadFilesInFolder(folder: File) {
+        fileList.clear()
+        if (folder.exists()) {
+            val filesInFolder = folder.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?: emptyList()
+            fileList.addAll(filesInFolder)
+        }
+        tvTitle.text = "${subItem} > ${folder.name}"
+        tvFileCount.text = "${fileList.size}개"
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun countAllFiles(folder: File): Int {
+        if (!folder.exists()) return 0
+        return folder.walkTopDown().filter { it.isFile }.count()
+    }
+
+    private fun showFolderOptions(folder: File) {
+        val options = arrayOf("중요 보관함으로 이동", "지난서류로 이동", "휴지통으로 이동")
+        AlertDialog.Builder(this)
+            .setTitle(folder.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> moveFolderToImportant(folder)
+                    1 -> showFolderMoveToArchiveMonthPicker(folder)
+                    2 -> moveFolderToTrash(folder)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun moveFolderToImportant(folder: File) {
+        try {
+            val importantFolder = File(File(File(filesDir, "docs_manage"), "important"), category)
+            val destFolder = File(importantFolder, "${subItem}/${folder.name}")
+            if (!destFolder.exists()) destFolder.mkdirs()
+            folder.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    file.copyTo(File(destFolder, file.name), overwrite = true)
+                }
+            }
+            folder.deleteRecursively()
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadFiles()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun showFolderMoveToArchiveMonthPicker(folder: File) {
+        val recentMonths = mutableListOf<String>()
+        for (i in -1..4) {
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.MONTH, -i + 1)
+            recentMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
+        }
+        val oldMonths = mutableListOf<String>()
+        for (i in 6..36) {
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.MONTH, -i + 1)
+            oldMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
+        }
+        val dialogView = layoutInflater.inflate(R.layout.dialog_month_picker, null)
+        val containerRecent = dialogView.findViewById<LinearLayout>(R.id.containerRecent)
+        val containerOld = dialogView.findViewById<LinearLayout>(R.id.containerOld)
+        val btnToggle = dialogView.findViewById<Button>(R.id.btnToggle)
+        val scrollOld = dialogView.findViewById<ScrollView>(R.id.scrollOld)
+        val archiveDialog = AlertDialog.Builder(this)
+            .setTitle("지난서류 보관함 - 월 선택")
+            .setView(dialogView)
+            .setNegativeButton("취소", null)
+            .create()
+        recentMonths.forEach { month ->
+            val btn = Button(this).apply {
+                text = month; textSize = 15f
+                setTextColor(android.graphics.Color.WHITE)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+            }
+            btn.setOnClickListener { moveFolderToArchive(folder, month); archiveDialog.dismiss() }
+            containerRecent.addView(btn)
+        }
+        scrollOld.visibility = View.GONE
+        oldMonths.forEach { month ->
+            val btn = Button(this).apply {
+                text = month; textSize = 15f
+                setTextColor(android.graphics.Color.WHITE)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#1E3A8A"))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).also { it.setMargins(0,0,0,16) }
+            }
+            btn.setOnClickListener { moveFolderToArchive(folder, month); archiveDialog.dismiss() }
+            containerOld.addView(btn)
+        }
+        var isOldVisible = false
+        btnToggle.setOnClickListener {
+            isOldVisible = !isOldVisible
+            scrollOld.visibility = if (isOldVisible) View.VISIBLE else View.GONE
+            btnToggle.text = if (isOldVisible) "▲ 이전 기록 닫기" else "▶ 이전 기록 보기"
+        }
+        archiveDialog.show()
+    }
+
+    private fun moveFolderToArchive(folder: File, monthStr: String) {
+        try {
+            val baseFolder = File(filesDir, "docs_manage")
+            val archiveFolder = File(File(File(baseFolder, "archive"), category), "$subItem/$monthStr/${folder.name}")
+            if (!archiveFolder.exists()) archiveFolder.mkdirs()
+            folder.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    file.copyTo(File(archiveFolder, file.name), overwrite = true)
+                }
+            }
+            folder.deleteRecursively()
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "지난서류 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadFiles()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToTrash(folder: File) {
+        try {
+            val trashFolder = File(File(File(filesDir, "docs_manage"), "trash"), category)
+            val destFolder = File(trashFolder, "${subItem}/${folder.name}")
+            if (!destFolder.exists()) destFolder.mkdirs()
+            folder.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    file.copyTo(File(destFolder, file.name), overwrite = true)
+                }
+            }
+            folder.deleteRecursively()
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadFiles()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showMonthPickerDialog() {
@@ -257,7 +452,11 @@ class DocsFileActivity : AppCompatActivity() {
         contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(destFile).use { output -> input.copyTo(output) }
         }
-        loadFiles()
+        if (currentViewFolder != null) {
+            loadFilesInFolder(currentViewFolder!!)
+        } else {
+            loadFiles()
+        }
     }
 
     private fun getFileName(uri: Uri): String {
@@ -267,21 +466,6 @@ class DocsFileActivity : AppCompatActivity() {
             if (cursor.moveToFirst() && nameIndex >= 0) name = cursor.getString(nameIndex)
         }
         return name
-    }
-
-    private fun loadFiles() {
-        val baseFolder = File(filesDir, "docs_manage")
-        val folder = File(File(baseFolder, category), subItem)
-        fileList.clear()
-        if (folder.exists()) {
-            folder.walkTopDown()
-                .filter { it.isFile }
-                .sortedByDescending { it.lastModified() }
-                .let { fileList.addAll(it) }
-        }
-        tvTitle.text = subItem
-        tvFileCount.text = "${fileList.size}개"
-        fileAdapter.notifyDataSetChanged()
     }
 
     private fun showFileOptions(file: File) {
@@ -360,7 +544,11 @@ class DocsFileActivity : AppCompatActivity() {
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "지난서류 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles()
+            if (currentViewFolder != null) {
+                loadFilesInFolder(currentViewFolder!!)
+            } else {
+                loadFiles()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -373,7 +561,11 @@ class DocsFileActivity : AppCompatActivity() {
             file.copyTo(File(importantFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles()
+            if (currentViewFolder != null) {
+                loadFilesInFolder(currentViewFolder!!)
+            } else {
+                loadFiles()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -386,7 +578,11 @@ class DocsFileActivity : AppCompatActivity() {
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles()
+            if (currentViewFolder != null) {
+                loadFilesInFolder(currentViewFolder!!)
+            } else {
+                loadFiles()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }

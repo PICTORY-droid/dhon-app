@@ -3,6 +3,7 @@ package com.daehyeon.dhon
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -17,13 +18,24 @@ class DocsImportantActivity : AppCompatActivity() {
     private lateinit var fileAdapter: FileAdapter
     private val fileList = mutableListOf<File>()
 
+    private var category = ""
+    private var subItem = ""
+    private var currentViewFolder: File? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_docs_important)
 
-        // 뒤로가기
+        category = intent.getStringExtra("category") ?: ""
+        subItem = intent.getStringExtra("subItem") ?: ""
+
         findViewById<android.widget.ImageButton>(R.id.btnBack).setOnClickListener {
-            finish()
+            if (currentViewFolder != null) {
+                currentViewFolder = null
+                loadFiles()
+            } else {
+                finish()
+            }
         }
 
         recyclerView = findViewById(R.id.recyclerView)
@@ -31,35 +43,126 @@ class DocsImportantActivity : AppCompatActivity() {
 
         fileAdapter = FileAdapter(
             fileList,
-            onClick = { file -> openFile(file) },
-            onLongClick = { file -> showFileOptions(file) }
+            onClick = { file ->
+                if (file.isDirectory) {
+                    currentViewFolder = file
+                    loadFilesInFolder(file)
+                } else {
+                    openFile(file)
+                }
+            },
+            onLongClick = { file ->
+                if (file.isDirectory) {
+                    showFolderOptions(file)
+                } else {
+                    showFileOptions(file)
+                }
+            }
         )
         recyclerView.adapter = fileAdapter
 
         loadFiles()
     }
 
+    override fun onBackPressed() {
+        if (currentViewFolder != null) {
+            currentViewFolder = null
+            loadFiles()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     private fun loadFiles() {
         val baseFolder = File(filesDir, "docs_manage")
-        val importantFolder = File(baseFolder, "important")
+        val importantFolder = File(File(File(baseFolder, "important"), category), subItem)
 
         fileList.clear()
         if (importantFolder.exists()) {
-            importantFolder.walkTopDown()
-                .filter { it.isFile }
-                .sortedByDescending { it.lastModified() }
-                .let { fileList.addAll(it) }
+            val subFolders = importantFolder.listFiles()
+                ?.filter { it.isDirectory }
+                ?.sortedByDescending { it.name }
+                ?: emptyList()
+            val files = importantFolder.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?: emptyList()
+            fileList.addAll(subFolders)
+            fileList.addAll(files)
         }
 
-        // 빈 경우 안내 문구 표시
         val tvEmpty = findViewById<TextView>(R.id.tvEmpty)
-        tvEmpty.visibility = if (fileList.isEmpty()) {
-            android.view.View.VISIBLE
-        } else {
-            android.view.View.GONE
-        }
+        tvEmpty.visibility = if (fileList.isEmpty()) View.VISIBLE else View.GONE
 
         fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun loadFilesInFolder(folder: File) {
+        fileList.clear()
+        if (folder.exists()) {
+            val filesInFolder = folder.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?: emptyList()
+            fileList.addAll(filesInFolder)
+        }
+
+        val tvEmpty = findViewById<TextView>(R.id.tvEmpty)
+        tvEmpty.visibility = if (fileList.isEmpty()) View.VISIBLE else View.GONE
+
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun showFolderOptions(folder: File) {
+        val options = arrayOf("복원하기", "휴지통으로 이동")
+        AlertDialog.Builder(this)
+            .setTitle(folder.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> restoreFolder(folder)
+                    1 -> moveFolderToTrash(folder)
+                }
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun restoreFolder(folder: File) {
+        try {
+            val baseFolder = File(filesDir, "docs_manage")
+            val restoreFolder = File(File(File(baseFolder, category), subItem), folder.name)
+            if (!restoreFolder.exists()) restoreFolder.mkdirs()
+            folder.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    file.copyTo(File(restoreFolder, file.name), overwrite = true)
+                }
+            }
+            folder.deleteRecursively()
+            Toast.makeText(this, "복원 완료!", Toast.LENGTH_SHORT).show()
+            loadFiles()
+        } catch (e: Exception) {
+            Toast.makeText(this, "복원 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToTrash(folder: File) {
+        try {
+            val trashFolder = File(
+                File(File(filesDir, "docs_manage"), "trash"),
+                "중요보관함/${folder.name}"
+            )
+            if (!trashFolder.exists()) trashFolder.mkdirs()
+            folder.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                    file.copyTo(File(trashFolder, file.name), overwrite = true)
+                }
+            }
+            folder.deleteRecursively()
+            Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadFiles()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showFileOptions(file: File) {
@@ -86,7 +189,11 @@ class DocsImportantActivity : AppCompatActivity() {
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadFiles()
+            if (currentViewFolder != null) {
+                loadFilesInFolder(currentViewFolder!!)
+            } else {
+                loadFiles()
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
