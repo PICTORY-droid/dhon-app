@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
@@ -32,6 +33,7 @@ class WorkReportActivity : AppCompatActivity() {
     private lateinit var fileAdapter: FileAdapter
     private lateinit var tvCurrentMonth: TextView
     private lateinit var tvSortIcon: TextView
+    private lateinit var tvViewToggleIcon: TextView
     private val fileList = mutableListOf<File>()
 
     private val folderName = "work_report"
@@ -39,8 +41,8 @@ class WorkReportActivity : AppCompatActivity() {
     private var selectedYear = 0
     private var monthPickerDialog: AlertDialog? = null
     private var currentViewFolder: File? = null
+    private var isGridView = false  // false = 리스트(기본), true = 그리드
 
-    // ✅ 토글 상태 - 절대 제거 금지
     private var isOldFoldersExpanded = false
     private val allMonthFolders = mutableListOf<File>()
 
@@ -98,8 +100,12 @@ class WorkReportActivity : AppCompatActivity() {
 
         tvCurrentMonth = findViewById(R.id.tvCurrentMonth)
         tvSortIcon = findViewById(R.id.tvSortIcon)
+        tvViewToggleIcon = findViewById(R.id.tvViewToggleIcon)
         recyclerView = findViewById(R.id.recyclerFiles)
         recyclerView.layoutManager = LinearLayoutManager(this)
+
+        // ✅ 기본 리스트 상태 → 버튼에 ⊞ 표시
+        tvViewToggleIcon.text = "⊞"
 
         val calendar = Calendar.getInstance()
         selectedYear = calendar.get(Calendar.YEAR)
@@ -122,9 +128,7 @@ class WorkReportActivity : AppCompatActivity() {
             },
             onLongClick = { file ->
                 if (!file.name.startsWith("▶") && !file.name.startsWith("▲")) {
-                    if (!file.isDirectory) {
-                        showFileOptions(file)
-                    }
+                    if (!file.isDirectory) showFileOptions(file)
                 }
             }
         )
@@ -136,6 +140,12 @@ class WorkReportActivity : AppCompatActivity() {
         deleteOldEmptyMonthFolders()
         createMonthFoldersIfNotExist()
         loadMonthFolders()
+
+        // ✅ 버튼 1개로 그리드/리스트 토글
+        findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
+            isGridView = !isGridView
+            updateViewMode()
+        }
 
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
@@ -194,7 +204,20 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ 월이 바뀔 때만 새 폴더 생성 (한 달에 한 번만)
+    // ✅ 버튼 1개로 그리드/리스트 전환
+    // 리스트 상태 → 버튼에 ⊞ (그리드로 바꾸라는 뜻)
+    // 그리드 상태 → 버튼에 ☰ (리스트로 바꾸라는 뜻)
+    private fun updateViewMode() {
+        if (isGridView) {
+            recyclerView.layoutManager = GridLayoutManager(this, 3)
+            tvViewToggleIcon.text = "☰"
+        } else {
+            recyclerView.layoutManager = LinearLayoutManager(this)
+            tvViewToggleIcon.text = "⊞"
+        }
+        fileAdapter.notifyDataSetChanged()
+    }
+
     private fun createMonthFoldersIfNotExist() {
         val prefs = getSharedPreferences("work_report_prefs", MODE_PRIVATE)
         val now = Calendar.getInstance()
@@ -225,7 +248,6 @@ class WorkReportActivity : AppCompatActivity() {
         prefs.edit().putInt("last_created_total_wr", currentTotal).apply()
     }
 
-    // ✅ 현재 연도 1월 이전 빈 폴더만 삭제
     private fun deleteOldEmptyMonthFolders() {
         val baseFolder = File(filesDir, folderName)
         if (!baseFolder.exists()) return
@@ -247,7 +269,6 @@ class WorkReportActivity : AppCompatActivity() {
             }
     }
 
-    // ✅ 현재월~현재월+2 범위 밖은 토글 숨김
     private fun shouldHideInToggle(folderName: String): Boolean {
         return try {
             val regex = Regex("(\\d{4})년 (\\d{1,2})월")
@@ -263,7 +284,6 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ 토글 적용
     private fun applyToggleToFileList() {
         fileList.clear()
         val visibleFolders = allMonthFolders.filter { !shouldHideInToggle(it.name) }
@@ -277,9 +297,7 @@ class WorkReportActivity : AppCompatActivity() {
             val baseFolder = File(filesDir, folderName)
             val toggleFile = File(baseFolder, toggleLabel)
             fileList.add(toggleFile)
-            if (isOldFoldersExpanded) {
-                fileList.addAll(hiddenFolders)
-            }
+            if (isOldFoldersExpanded) fileList.addAll(hiddenFolders)
         }
         fileAdapter.notifyDataSetChanged()
     }
@@ -475,8 +493,7 @@ class WorkReportActivity : AppCompatActivity() {
         archiveFolder.listFiles()?.forEach { yearFolder ->
             val year = yearFolder.name.replace("년", "").trim().toIntOrNull() ?: return@forEach
             yearFolder.listFiles()?.forEach { monthFolder ->
-                val month =
-                    monthFolder.name.replace("월", "").trim().toIntOrNull() ?: return@forEach
+                val month = monthFolder.name.replace("월", "").trim().toIntOrNull() ?: return@forEach
                 val monthsDiff = (currentYear - year) * 12 + (currentMonth - month)
                 if (monthsDiff >= 12) {
                     val trashFolder = File(
@@ -511,7 +528,6 @@ class WorkReportActivity : AppCompatActivity() {
             .forEach { it.delete() }
     }
 
-    // ✅ 월 팝업 없이 파일이 속한 월 폴더명 자동 사용
     private fun showFileOptions(file: File) {
         val options = arrayOf("공유하기", "지난서류로 이동", "중요 보관함으로 이동", "휴지통으로 이동")
         AlertDialog.Builder(this)
@@ -527,7 +543,6 @@ class WorkReportActivity : AppCompatActivity() {
             .setNegativeButton("취소", null).show()
     }
 
-    // ✅ 월 팝업 제거: 파일이 속한 월 폴더명을 그대로 archive 경로에 사용
     private fun moveToArchive(file: File) {
         try {
             val monthFolderName = file.parentFile?.name ?: ""
@@ -561,7 +576,6 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ 복원 기능 유지: 월별 폴더명 포함하여 휴지통 저장
     private fun moveToTrash(file: File) {
         try {
             val monthFolderName = file.parentFile?.name ?: ""
@@ -588,9 +602,9 @@ class WorkReportActivity : AppCompatActivity() {
                 setDataAndType(uri, getMimeType(file.name))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "파일 열기"))
+            startActivity(Intent.createChooser(intent, "📄 파일 크게보기"))
         } catch (e: Exception) {
-            Toast.makeText(this, "파일을 열 수 없어요: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "❌ 파일을 열 수 없어요\n뷰어 앱을 설치해 주세요", Toast.LENGTH_SHORT).show()
         }
     }
 

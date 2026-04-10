@@ -17,6 +17,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.io.FileOutputStream
@@ -31,10 +32,13 @@ class PhotoActivity : AppCompatActivity() {
     private lateinit var photoAdapter: PhotoAdapter
     private lateinit var tvTitle: TextView
     private lateinit var tvSortIcon: TextView
+    private lateinit var tvPhotoCount: TextView
+    private lateinit var tvViewToggleIcon: TextView
     private val photoList = mutableListOf<File>()
     private var currentPhotoFile: File? = null
     private var selectedTag = "기타"
     private val folderName = "site_photos"
+    private var isGridView = true  // true = 그리드(기본), false = 리스트
 
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -68,11 +72,9 @@ class PhotoActivity : AppCompatActivity() {
             }
 
             if (finalUris.size == 1) {
-                // 1장이면 태그 선택 가능
                 savePhotoFromUri(finalUris[0], System.currentTimeMillis())
                     ?.let { showTagDialog(it) }
             } else if (finalUris.size > 1) {
-                // 여러 장이면 태그 없이 자동저장 (파일명 겹침 방지: 인덱스 추가)
                 var successCount = 0
                 finalUris.forEachIndexed { index, uri ->
                     val uniqueTime = System.currentTimeMillis() + index
@@ -93,7 +95,11 @@ class PhotoActivity : AppCompatActivity() {
 
         tvTitle = findViewById(R.id.tvTitle)
         tvSortIcon = findViewById(R.id.tvSortIcon)
+        tvPhotoCount = findViewById(R.id.tvPhotoCount)
+        tvViewToggleIcon = findViewById(R.id.tvViewToggleIcon)
         recyclerView = findViewById(R.id.recyclerPhotos)
+
+        // ✅ 기본 그리드 3열로 시작
         recyclerView.layoutManager = GridLayoutManager(this, 3)
 
         photoAdapter = PhotoAdapter(
@@ -103,8 +109,17 @@ class PhotoActivity : AppCompatActivity() {
         )
         recyclerView.adapter = photoAdapter
 
+        // ✅ 기본 그리드 상태 → 버튼에 ☰ 표시 (리스트로 바꾸라는 뜻)
+        tvViewToggleIcon.text = "☰"
+
         checkAndArchiveOldPhotos()
         checkAndDeleteOldTrash()
+
+        // ✅ 버튼 1개로 그리드/리스트 토글
+        findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
+            isGridView = !isGridView
+            updateViewMode()
+        }
 
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
@@ -136,6 +151,20 @@ class PhotoActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadPhotos()
+    }
+
+    // ✅ 버튼 1개로 그리드/리스트 전환
+    // 그리드 상태 → 버튼에 ☰ (리스트로 바꾸라는 뜻)
+    // 리스트 상태 → 버튼에 ⊞ (그리드로 바꾸라는 뜻)
+    private fun updateViewMode() {
+        if (isGridView) {
+            recyclerView.layoutManager = GridLayoutManager(this, 3)
+            tvViewToggleIcon.text = "☰"
+        } else {
+            recyclerView.layoutManager = LinearLayoutManager(this)
+            tvViewToggleIcon.text = "⊞"
+        }
+        photoAdapter.notifyDataSetChanged()
     }
 
     private fun openPhotoDetail(file: File) {
@@ -207,7 +236,6 @@ class PhotoActivity : AppCompatActivity() {
         return SimpleDateFormat("yyyy년 MM월", Locale.KOREA).format(Date())
     }
 
-    // uniqueTime 파라미터로 파일명 겹침 방지!
     private fun savePhotoFromUri(uri: Uri, uniqueTime: Long = System.currentTimeMillis()): File? {
         return try {
             val folder = File(File(filesDir, folderName), getCurrentMonthFolder())
@@ -434,7 +462,8 @@ class PhotoActivity : AppCompatActivity() {
                 .sortedByDescending { it.lastModified() }
                 .let { photoList.addAll(it) }
         }
-        tvTitle.text = "현장 사진 (${photoList.size}장)"
+        tvTitle.text = "현장 사진"
+        tvPhotoCount.text = "현장 사진 (${photoList.size}장)"
         photoAdapter.notifyDataSetChanged()
     }
 
@@ -473,7 +502,8 @@ class PhotoActivity : AppCompatActivity() {
                 .sortedByDescending { it.lastModified() }
                 .let { photoList.addAll(it) }
         }
-        tvTitle.text = "$year $month 보관함 (${photoList.size}장)"
+        tvTitle.text = "$year $month 보관함"
+        tvPhotoCount.text = "$year $month 보관함 (${photoList.size}장)"
         photoAdapter.notifyDataSetChanged()
     }
 

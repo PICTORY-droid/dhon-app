@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
@@ -33,6 +34,7 @@ class DocsFileActivity : AppCompatActivity() {
     private lateinit var tvTitle: TextView
     private lateinit var tvSortIcon: TextView
     private lateinit var tvFileCount: TextView
+    private lateinit var tvViewToggleIcon: TextView
     private val fileList = mutableListOf<File>()
 
     private var category = ""
@@ -40,6 +42,7 @@ class DocsFileActivity : AppCompatActivity() {
     private var currentFolder: File? = null
     private var monthPickerDialog: AlertDialog? = null
     private var currentViewFolder: File? = null
+    private var isGridView = false
 
     private var isOldFoldersExpanded = false
     private val allMonthFolders = mutableListOf<File>()
@@ -93,17 +96,22 @@ class DocsFileActivity : AppCompatActivity() {
             insets
         }
 
+        // ✅ 1번째: category, subItem 먼저 받기
         category = intent.getStringExtra("category") ?: ""
         subItem = intent.getStringExtra("subItem") ?: ""
 
+        // ✅ 2번째: 뷰 연결
         tvTitle = findViewById(R.id.tvTitle)
         tvSortIcon = findViewById(R.id.tvSortIcon)
         tvFileCount = findViewById(R.id.tvFileCount)
+        tvViewToggleIcon = findViewById(R.id.tvViewToggleIcon)
         recyclerView = findViewById(R.id.recyclerFiles)
         recyclerView.layoutManager = LinearLayoutManager(this)
 
         tvTitle.text = subItem
+        tvViewToggleIcon.text = "⊞"
 
+        // ✅ 3번째: 어댑터 연결
         fileAdapter = FileAdapter(
             fileList,
             onClick = { file ->
@@ -127,6 +135,12 @@ class DocsFileActivity : AppCompatActivity() {
             }
         )
         recyclerView.adapter = fileAdapter
+
+        // ✅ 4번째: 버튼 연결
+        findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
+            isGridView = !isGridView
+            updateViewMode()
+        }
 
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
@@ -172,7 +186,7 @@ class DocsFileActivity : AppCompatActivity() {
             fileAdapter.sortFiles()
         }
 
-        // ✅ 순서 중요: 삭제 → 생성(3개만) → 로드
+        // ✅ 5번째: category, subItem 다 준비된 다음에 실행!
         deleteOldEmptyMonthFolders()
         createMonthFoldersIfNotExist()
         loadFiles()
@@ -193,8 +207,17 @@ class DocsFileActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ 핵심: 현재월 포함 앞으로 2개월만 생성 (4월이면 4,5,6월만)
-    // SharedPreferences로 월이 바뀔 때만 실행
+    private fun updateViewMode() {
+        if (isGridView) {
+            recyclerView.layoutManager = GridLayoutManager(this, 3)
+            tvViewToggleIcon.text = "☰"
+        } else {
+            recyclerView.layoutManager = LinearLayoutManager(this)
+            tvViewToggleIcon.text = "⊞"
+        }
+        fileAdapter.notifyDataSetChanged()
+    }
+
     private fun createMonthFoldersIfNotExist() {
         val prefsKey = "docs_file_prefs_${category}_${subItem}"
         val prefs = getSharedPreferences(prefsKey, MODE_PRIVATE)
@@ -202,12 +225,11 @@ class DocsFileActivity : AppCompatActivity() {
         val currentYear = now.get(Calendar.YEAR)
         val currentMonth = now.get(Calendar.MONTH) + 1
         val currentTotal = currentYear * 12 + currentMonth
-        val lastCreatedTotal = prefs.getInt("last_created_total", -1)
         val baseFolder = File(filesDir, "docs_manage")
         val subItemFolder = File(File(baseFolder, category), subItem)
 
-        // 이번 달에 이미 생성했어도 폴더 존재 확인 후 없으면 재생성
-        for (offset in 0..2) {
+        // ✅ 과거 3개월 + 현재월 + 미래 2개월 = 총 6개 생성
+        for (offset in -3..2) {
             val cal = Calendar.getInstance()
             cal.add(Calendar.MONTH, offset)
             val y = cal.get(Calendar.YEAR)
@@ -216,23 +238,18 @@ class DocsFileActivity : AppCompatActivity() {
             if (!monthFolder.exists()) monthFolder.mkdirs()
         }
 
-        // 월이 바뀐 경우에만 기록 갱신
-        if (lastCreatedTotal != currentTotal) {
+        if (prefs.getInt("last_created_total", -1) != currentTotal) {
             prefs.edit().putInt("last_created_total", currentTotal).apply()
         }
     }
 
-    // ✅ 2025년 12월 이전 빈 폴더 삭제 (파일 있는 폴더는 보호)
-    // 2026년 1,2,3월은 유지 (토글 안에 표시)
     private fun deleteOldEmptyMonthFolders() {
         val baseFolder = File(filesDir, "docs_manage")
         val subItemFolder = File(File(baseFolder, category), subItem)
         if (!subItemFolder.exists()) return
 
         val now = Calendar.getInstance()
-        val currentYear = now.get(Calendar.YEAR)
-        // 2026년 1월(currentYear * 12 + 1) 이전은 삭제 대상
-        val keepFromTotal = currentYear * 12 + 1
+        val currentTotal = now.get(Calendar.YEAR) * 12 + (now.get(Calendar.MONTH) + 1)
 
         subItemFolder.listFiles()
             ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
@@ -242,15 +259,16 @@ class DocsFileActivity : AppCompatActivity() {
                 val folderYear = match.groupValues[1].toInt()
                 val folderMonth = match.groupValues[2].toInt()
                 val folderTotal = folderYear * 12 + folderMonth
-                // 2025년 12월 이전이고 파일 없으면 삭제
-                if (folderTotal < keepFromTotal) {
+
+                // ✅ 현재월 기준 3개월 초과 과거 폴더 + 비어있으면 삭제
+                val monthsAgo = currentTotal - folderTotal
+                if (monthsAgo > 3) {
                     val hasFiles = folder.walkTopDown().any { it.isFile }
                     if (!hasFiles) folder.delete()
                 }
             }
     }
 
-    // ✅ 4,5,6월 표시 / 나머지는 토글 숨김
     private fun shouldHideInToggle(folderName: String): Boolean {
         return try {
             val regex = Regex("(\\d{4})년 (\\d{1,2})월")
@@ -260,8 +278,6 @@ class DocsFileActivity : AppCompatActivity() {
             val folderTotal = folderYear * 12 + folderMonth
             val now = Calendar.getInstance()
             val currentTotal = now.get(Calendar.YEAR) * 12 + (now.get(Calendar.MONTH) + 1)
-            // currentTotal = 4월, currentTotal+1 = 5월, currentTotal+2 = 6월 → 표시
-            // 나머지(1,2,3월 등) → 토글 숨김
             folderTotal < currentTotal || folderTotal > currentTotal + 2
         } catch (e: Exception) {
             false
@@ -281,9 +297,7 @@ class DocsFileActivity : AppCompatActivity() {
             val subItemFolder = File(File(File(filesDir, "docs_manage"), category), subItem)
             val toggleFile = File(subItemFolder, toggleLabel)
             fileList.add(toggleFile)
-            if (isOldFoldersExpanded) {
-                fileList.addAll(hiddenFolders)
-            }
+            if (isOldFoldersExpanded) fileList.addAll(hiddenFolders)
         }
         fileAdapter.notifyDataSetChanged()
     }
@@ -441,15 +455,9 @@ class DocsFileActivity : AppCompatActivity() {
         try {
             val monthFolderName = file.parentFile?.name ?: ""
             val archiveFolder = if (monthFolderName.matches(Regex("\\d{4}년 \\d{1,2}월"))) {
-                File(
-                    File(filesDir, "docs_manage"),
-                    "archive/$category/$subItem/$monthFolderName"
-                )
+                File(File(filesDir, "docs_manage"), "archive/$category/$subItem/$monthFolderName")
             } else {
-                File(
-                    File(filesDir, "docs_manage"),
-                    "archive/$category/$subItem"
-                )
+                File(File(filesDir, "docs_manage"), "archive/$category/$subItem")
             }
             if (!archiveFolder.exists()) archiveFolder.mkdirs()
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
@@ -464,10 +472,7 @@ class DocsFileActivity : AppCompatActivity() {
 
     private fun moveToImportant(file: File) {
         try {
-            val importantFolder = File(
-                File(filesDir, "docs_manage"),
-                "important/$category/$subItem"
-            )
+            val importantFolder = File(File(filesDir, "docs_manage"), "important/$category/$subItem")
             if (!importantFolder.exists()) importantFolder.mkdirs()
             file.copyTo(File(importantFolder, file.name), overwrite = true)
             file.delete()
@@ -483,15 +488,9 @@ class DocsFileActivity : AppCompatActivity() {
         try {
             val monthFolderName = file.parentFile?.name ?: ""
             val trashFolder = if (monthFolderName.matches(Regex("\\d{4}년 \\d{1,2}월"))) {
-                File(
-                    File(filesDir, "docs_manage"),
-                    "trash/$category/$subItem/$monthFolderName"
-                )
+                File(File(filesDir, "docs_manage"), "trash/$category/$subItem/$monthFolderName")
             } else {
-                File(
-                    File(filesDir, "docs_manage"),
-                    "trash/$category/$subItem"
-                )
+                File(File(filesDir, "docs_manage"), "trash/$category/$subItem")
             }
             if (!trashFolder.exists()) trashFolder.mkdirs()
             file.copyTo(File(trashFolder, file.name), overwrite = true)
@@ -577,10 +576,7 @@ class DocsFileActivity : AppCompatActivity() {
     }
 
     private fun saveToMonth(monthStr: String) {
-        val monthFolder = File(
-            File(filesDir, "docs_manage"),
-            "$category/$subItem/$monthStr"
-        )
+        val monthFolder = File(File(filesDir, "docs_manage"), "$category/$subItem/$monthStr")
         if (!monthFolder.exists()) monthFolder.mkdirs()
         currentFolder = monthFolder
         openFilePicker()
@@ -629,9 +625,9 @@ class DocsFileActivity : AppCompatActivity() {
                 setDataAndType(uri, getMimeType(file.name))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            startActivity(Intent.createChooser(intent, "파일 열기"))
+            startActivity(Intent.createChooser(intent, "📄 파일 크게보기"))
         } catch (e: Exception) {
-            Toast.makeText(this, "파일을 열 수 없어요: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "❌ 파일을 열 수 없어요\n뷰어 앱을 설치해 주세요", Toast.LENGTH_SHORT).show()
         }
     }
 

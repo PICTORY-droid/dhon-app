@@ -1,9 +1,13 @@
 package com.daehyeon.dhon
 
+import android.content.Context
+import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -34,13 +38,12 @@ class FileAdapter(
         val file = files[position]
 
         // ✅ 토글 더미 항목 처리 (▶ 또는 ▲ 로 시작하는 항목)
-        // 날짜 표시 안 하고, 아이콘만 표시
         if (file.name.startsWith("▶") || file.name.startsWith("▲")) {
             holder.tvFileIcon.text = ""
             holder.tvFileName.text = file.name
             holder.tvFileName.setTextColor(android.graphics.Color.parseColor("#374151"))
             holder.tvFileName.textSize = 14f
-            holder.tvFileDate.text = ""  // ✅ 날짜 완전히 숨김
+            holder.tvFileDate.text = ""
             holder.itemView.setOnClickListener { onClick(file) }
             holder.itemView.setOnLongClickListener {
                 onLongClick(file)
@@ -71,7 +74,18 @@ class FileAdapter(
             holder.tvFileDate.text = formatDate(file.lastModified())
         }
 
-        holder.itemView.setOnClickListener { onClick(file) }
+        // ✅ 짧게 클릭 → 파일 크게보기 (뷰어로 열기)
+        holder.itemView.setOnClickListener {
+            if (file.isDirectory) {
+                // 폴더는 기존 onClick 유지
+                onClick(file)
+            } else {
+                // 파일은 뷰어로 열기
+                openFileViewer(holder.itemView.context, file)
+            }
+        }
+
+        // ✅ 길게 클릭 → 기존 팝업 유지
         holder.itemView.setOnLongClickListener {
             onLongClick(file)
             true
@@ -80,8 +94,41 @@ class FileAdapter(
 
     override fun getItemCount() = files.size
 
+    // ✅ 파일 크게보기 (뷰어로 열기)
+    private fun openFileViewer(context: Context, file: File) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                file
+            )
+            val mimeType = getMimeType(file.name)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "파일 열기"))
+        } catch (e: Exception) {
+            Toast.makeText(context, "❌ 파일을 열 수 없어요\n뷰어 앱을 설치해 주세요", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun getMimeType(fileName: String): String {
+        return when {
+            fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+            fileName.endsWith(".doc", ignoreCase = true) -> "application/msword"
+            fileName.endsWith(".docx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
+            fileName.endsWith(".xlsx", ignoreCase = true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".jpg", ignoreCase = true) ||
+                    fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
+            else -> "*/*"
+        }
+    }
+
     private fun formatDate(timeMillis: Long): String {
-        // ✅ timeMillis가 0이면 빈 문자열 반환 (1970년 01월 01일 방지)
         if (timeMillis == 0L) return ""
         return try {
             SimpleDateFormat("yy년 MM월 dd일", Locale.KOREA).format(Date(timeMillis))
