@@ -41,7 +41,7 @@ class WorkReportActivity : AppCompatActivity() {
     private var selectedYear = 0
     private var monthPickerDialog: AlertDialog? = null
     private var currentViewFolder: File? = null
-    private var isGridView = false  // false = 리스트(기본), true = 그리드
+    private var isGridView = false
 
     private var isOldFoldersExpanded = false
     private val allMonthFolders = mutableListOf<File>()
@@ -104,7 +104,6 @@ class WorkReportActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerFiles)
         recyclerView.layoutManager = LinearLayoutManager(this)
 
-        // ✅ 기본 리스트 상태 → 버튼에 ⊞ 표시
         tvViewToggleIcon.text = "⊞"
 
         val calendar = Calendar.getInstance()
@@ -141,7 +140,6 @@ class WorkReportActivity : AppCompatActivity() {
         createMonthFoldersIfNotExist()
         loadMonthFolders()
 
-        // ✅ 버튼 1개로 그리드/리스트 토글
         findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
             isGridView = !isGridView
             updateViewMode()
@@ -204,16 +202,15 @@ class WorkReportActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ 버튼 1개로 그리드/리스트 전환
-    // 리스트 상태 → 버튼에 ⊞ (그리드로 바꾸라는 뜻)
-    // 그리드 상태 → 버튼에 ☰ (리스트로 바꾸라는 뜻)
     private fun updateViewMode() {
         if (isGridView) {
             recyclerView.layoutManager = GridLayoutManager(this, 3)
             tvViewToggleIcon.text = "☰"
+            fileAdapter.isGridView = true
         } else {
             recyclerView.layoutManager = LinearLayoutManager(this)
             tvViewToggleIcon.text = "⊞"
+            fileAdapter.isGridView = false
         }
         fileAdapter.notifyDataSetChanged()
     }

@@ -21,6 +21,12 @@ class FileAdapter(
 ) : RecyclerView.Adapter<FileAdapter.FileViewHolder>() {
 
     var isDescending = true
+    var isGridView = false
+
+    companion object {
+        const val VIEW_TYPE_LIST = 0
+        const val VIEW_TYPE_GRID = 1
+    }
 
     inner class FileViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val tvFileIcon: TextView = view.findViewById(R.id.tvFileIcon)
@@ -28,9 +34,17 @@ class FileAdapter(
         val tvFileDate: TextView = view.findViewById(R.id.tvFileDate)
     }
 
+    override fun getItemViewType(position: Int): Int {
+        return if (isGridView) VIEW_TYPE_GRID else VIEW_TYPE_LIST
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_file, parent, false)
+        val layoutId = if (viewType == VIEW_TYPE_GRID) {
+            R.layout.item_file_grid
+        } else {
+            R.layout.item_file
+        }
+        val view = LayoutInflater.from(parent.context).inflate(layoutId, parent, false)
         return FileViewHolder(view)
     }
 
@@ -55,10 +69,19 @@ class FileAdapter(
         if (file.isDirectory) {
             val fileCount = file.walkTopDown().filter { it.isFile }.count()
             holder.tvFileIcon.text = "📁"
-            holder.tvFileName.text = file.name
-            holder.tvFileName.setTextColor(android.graphics.Color.BLACK)
-            holder.tvFileName.textSize = 15f
             holder.tvFileDate.text = "${fileCount}개"
+            holder.tvFileName.setTextColor(android.graphics.Color.BLACK)
+
+            if (isGridView) {
+                // ✅ 그리드 보기: "26년\n6월" 형식으로 표시
+                val displayName = convertToGridFolderName(file.name)
+                holder.tvFileName.text = displayName
+                holder.tvFileName.textSize = 12f
+            } else {
+                // ✅ 리스트 보기: "2026년 6월" 그대로 표시
+                holder.tvFileName.text = file.name
+                holder.tvFileName.textSize = 15f
+            }
         } else {
             holder.tvFileIcon.text = when {
                 file.name.endsWith(".pdf", ignoreCase = true) -> "📕"
@@ -68,24 +91,28 @@ class FileAdapter(
                         file.name.endsWith(".xlsx", ignoreCase = true) -> "📗"
                 else -> "📄"
             }
-            holder.tvFileName.text = file.name
             holder.tvFileName.setTextColor(android.graphics.Color.BLACK)
-            holder.tvFileName.textSize = 15f
             holder.tvFileDate.text = formatDate(file.lastModified())
+
+            if (isGridView) {
+                holder.tvFileName.text = file.name
+                holder.tvFileName.textSize = 11f
+            } else {
+                holder.tvFileName.text = file.name
+                holder.tvFileName.textSize = 15f
+            }
         }
 
-        // ✅ 짧게 클릭 → 파일 크게보기 (뷰어로 열기)
+        // ✅ 짧게 클릭
         holder.itemView.setOnClickListener {
             if (file.isDirectory) {
-                // 폴더는 기존 onClick 유지
                 onClick(file)
             } else {
-                // 파일은 뷰어로 열기
                 openFileViewer(holder.itemView.context, file)
             }
         }
 
-        // ✅ 길게 클릭 → 기존 팝업 유지
+        // ✅ 길게 클릭
         holder.itemView.setOnLongClickListener {
             onLongClick(file)
             true
@@ -93,6 +120,19 @@ class FileAdapter(
     }
 
     override fun getItemCount() = files.size
+
+    // ✅ "2026년 6월" → "26년\n6월" 변환
+    private fun convertToGridFolderName(folderName: String): String {
+        return try {
+            val regex = Regex("(\\d{4})년 (\\d{1,2})월")
+            val match = regex.find(folderName) ?: return folderName
+            val year = match.groupValues[1].takeLast(2)
+            val month = match.groupValues[2]
+            "${year}년\n${month}월"
+        } catch (e: Exception) {
+            folderName
+        }
+    }
 
     // ✅ 파일 크게보기 (뷰어로 열기)
     private fun openFileViewer(context: Context, file: File) {

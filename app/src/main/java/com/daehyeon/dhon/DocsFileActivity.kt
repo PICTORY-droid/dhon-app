@@ -96,11 +96,9 @@ class DocsFileActivity : AppCompatActivity() {
             insets
         }
 
-        // ✅ 1번째: category, subItem 먼저 받기
         category = intent.getStringExtra("category") ?: ""
         subItem = intent.getStringExtra("subItem") ?: ""
 
-        // ✅ 2번째: 뷰 연결
         tvTitle = findViewById(R.id.tvTitle)
         tvSortIcon = findViewById(R.id.tvSortIcon)
         tvFileCount = findViewById(R.id.tvFileCount)
@@ -111,7 +109,6 @@ class DocsFileActivity : AppCompatActivity() {
         tvTitle.text = subItem
         tvViewToggleIcon.text = "⊞"
 
-        // ✅ 3번째: 어댑터 연결
         fileAdapter = FileAdapter(
             fileList,
             onClick = { file ->
@@ -136,7 +133,6 @@ class DocsFileActivity : AppCompatActivity() {
         )
         recyclerView.adapter = fileAdapter
 
-        // ✅ 4번째: 버튼 연결
         findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
             isGridView = !isGridView
             updateViewMode()
@@ -186,7 +182,6 @@ class DocsFileActivity : AppCompatActivity() {
             fileAdapter.sortFiles()
         }
 
-        // ✅ 5번째: category, subItem 다 준비된 다음에 실행!
         deleteOldEmptyMonthFolders()
         createMonthFoldersIfNotExist()
         loadFiles()
@@ -211,9 +206,11 @@ class DocsFileActivity : AppCompatActivity() {
         if (isGridView) {
             recyclerView.layoutManager = GridLayoutManager(this, 3)
             tvViewToggleIcon.text = "☰"
+            fileAdapter.isGridView = true
         } else {
             recyclerView.layoutManager = LinearLayoutManager(this)
             tvViewToggleIcon.text = "⊞"
+            fileAdapter.isGridView = false
         }
         fileAdapter.notifyDataSetChanged()
     }
@@ -228,7 +225,6 @@ class DocsFileActivity : AppCompatActivity() {
         val baseFolder = File(filesDir, "docs_manage")
         val subItemFolder = File(File(baseFolder, category), subItem)
 
-        // ✅ 과거 3개월 + 현재월 + 미래 2개월 = 총 6개 생성
         for (offset in -3..2) {
             val cal = Calendar.getInstance()
             cal.add(Calendar.MONTH, offset)
@@ -260,7 +256,6 @@ class DocsFileActivity : AppCompatActivity() {
                 val folderMonth = match.groupValues[2].toInt()
                 val folderTotal = folderYear * 12 + folderMonth
 
-                // ✅ 현재월 기준 3개월 초과 과거 폴더 + 비어있으면 삭제
                 val monthsAgo = currentTotal - folderTotal
                 if (monthsAgo > 3) {
                     val hasFiles = folder.walkTopDown().any { it.isFile }

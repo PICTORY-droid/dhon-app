@@ -23,16 +23,16 @@
             android:id="@+id/tvFileIcon"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="📄"
+            android:text="📁"
             android:textSize="28sp"
             android:gravity="center"/>
 
-        <!-- 파일명 (예: 26년 / 6월) -->
+        <!-- 년도 + 월 (예: 26년 줄바꿈 6월) -->
         <TextView
             android:id="@+id/tvFileName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="파일명"
+            android:text="26년&#10;6월"
             android:textColor="@color/text_primary"
             android:textSize="12sp"
             android:textStyle="bold"
@@ -46,7 +46,7 @@
             android:id="@+id/tvFileDate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text=""
+            android:text="0개"
             android:textColor="@color/text_hint"
             android:textSize="11sp"
             android:gravity="center"
