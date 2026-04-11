@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -17,17 +18,21 @@ class TrashActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var fileAdapter: FileAdapter
+    private lateinit var tvTitle: TextView
     private val fileList = mutableListOf<File>()
     private var folderName = "work_report"
-    // ✅ 복원 경로 추가 (WorkReportActivity에서 전달받음)
+    private var trashPath = ""
     private var restorePath = ""
+
+    // ✅ 현재 보고 있는 폴더 (null이면 휴지통 최상위)
+    private var currentViewFolder: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_trash)
 
         folderName = intent.getStringExtra("folderName") ?: "work_report"
-        // ✅ restorePath 받기
+        trashPath = intent.getStringExtra("trashPath") ?: ""
         restorePath = intent.getStringExtra("restorePath") ?: ""
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.navBarSpacer)) { view, insets ->
@@ -38,14 +43,14 @@ class TrashActivity : AppCompatActivity() {
             insets
         }
 
-        // 홈 버튼
+        tvTitle = findViewById(R.id.tvTitle)
+
         findViewById<LinearLayout>(R.id.btnHome).setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             startActivity(intent)
         }
 
-        // 전체비우기 버튼
         findViewById<LinearLayout>(R.id.btnEmptyTrash).setOnClickListener {
             confirmEmptyTrash()
         }
@@ -55,29 +60,61 @@ class TrashActivity : AppCompatActivity() {
 
         fileAdapter = FileAdapter(
             fileList,
-            onClick = { file -> openFile(file) },
-            onLongClick = { file -> showFileOptions(file) }
+            onClick = { file ->
+                if (file.isDirectory) {
+                    // ✅ 폴더 클릭하면 안으로 들어가기
+                    currentViewFolder = file
+                    loadFilesInFolder(file)
+                } else {
+                    openFile(file)
+                }
+            },
+            onLongClick = { file -> showItemOptions(file) }
         )
         recyclerView.adapter = fileAdapter
 
         loadFiles()
     }
 
-    // ✅ onResume: 복원 후 돌아왔을 때 목록 자동 갱신
     override fun onResume() {
         super.onResume()
         loadFiles()
     }
 
+    // ✅ 뒤로가기 누르면 폴더 안에 있으면 상위로, 아니면 Activity 닫기
+    override fun onBackPressed() {
+        if (currentViewFolder != null) {
+            currentViewFolder = null
+            loadFiles()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     private fun loadFiles() {
-        val trashFolder = File(File(filesDir, folderName), "trash")
+        val trashFolder = if (trashPath.isNotEmpty()) {
+            File(trashPath)
+        } else {
+            File(File(filesDir, folderName), "trash")
+        }
         fileList.clear()
         if (trashFolder.exists()) {
-            trashFolder.walkTopDown()
-                .filter { it.isFile }
-                .sortedByDescending { it.lastModified() }
-                .let { fileList.addAll(it) }
+            trashFolder.listFiles()
+                ?.sortedWith(compareByDescending<File> { it.isDirectory }.thenByDescending { it.lastModified() })
+                ?.let { fileList.addAll(it) }
         }
+        tvTitle.text = "${fileList.size}개"
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun loadFilesInFolder(folder: File) {
+        fileList.clear()
+        if (folder.exists()) {
+            folder.listFiles()
+                ?.sortedByDescending { it.lastModified() }
+                ?.let { fileList.addAll(it) }
+        }
+        tvTitle.text = "${folder.name} (${fileList.size}개)"
         fileAdapter.notifyDataSetChanged()
     }
 
@@ -95,66 +132,70 @@ class TrashActivity : AppCompatActivity() {
     }
 
     private fun emptyTrash() {
-        val trashFolder = File(File(filesDir, folderName), "trash")
-        if (trashFolder.exists()) {
-            trashFolder.walkTopDown()
-                .filter { it.isFile }
-                .forEach { it.delete() }
+        val trashFolder = if (trashPath.isNotEmpty()) {
+            File(trashPath)
+        } else {
+            File(File(filesDir, folderName), "trash")
         }
+        if (trashFolder.exists()) {
+            trashFolder.listFiles()?.forEach { it.deleteRecursively() }
+        }
+        currentViewFolder = null
         fileList.clear()
+        tvTitle.text = "0개"
         fileAdapter.notifyDataSetChanged()
         Toast.makeText(this, "휴지통을 비웠어요!", Toast.LENGTH_SHORT).show()
     }
 
-    private fun showFileOptions(file: File) {
-        val options = arrayOf("복원하기", "완전 삭제")
+    private fun showItemOptions(file: File) {
         AlertDialog.Builder(this)
             .setTitle(file.name)
-            .setItems(options) { _, which ->
+            .setItems(arrayOf("복원하기", "완전 삭제")) { _, which ->
                 when (which) {
-                    0 -> restoreFile(file)
-                    1 -> deleteFile(file)
+                    0 -> restoreItem(file)
+                    1 -> deleteItem(file)
                 }
             }
             .setNegativeButton("취소", null)
             .show()
     }
 
-    // ✅ 핵심 수정: 원래 월별 폴더에 복원
-    private fun restoreFile(file: File) {
+    private fun restoreItem(file: File) {
         try {
-            // 복원 기본 경로 결정
             val baseRestoreFolder = if (restorePath.isNotEmpty()) {
                 File(restorePath)
             } else {
                 File(filesDir, folderName)
             }
 
-            // ✅ 휴지통 안에서 파일의 부모 폴더명 확인
-            // 예: trash/2026년 4월/파일명 → 부모 = "2026년 4월"
-            val parentName = file.parentFile?.name ?: ""
-            val grandParentName = file.parentFile?.parentFile?.name ?: ""
-
-            val targetFolder = when {
-                // 월별 폴더 안에 있는 파일: "2026년 4월" 형식
-                parentName.matches(Regex("\\d{4}년 \\d{1,2}월")) -> {
-                    File(baseRestoreFolder, parentName)
+            if (file.isDirectory) {
+                val targetFolder = File(baseRestoreFolder, file.name)
+                targetFolder.mkdirs()
+                file.walkTopDown().forEach { f ->
+                    if (f.isFile) {
+                        val relativePath = f.relativeTo(file).path
+                        val destFile = File(targetFolder, relativePath)
+                        destFile.parentFile?.mkdirs()
+                        f.copyTo(destFile, overwrite = true)
+                    }
                 }
-                // 연도/월 2단계 폴더 구조: "2026년/4월" 형식
-                parentName.contains("월") && grandParentName.contains("년") -> {
-                    val yearStr = grandParentName.replace("년", "").trim()
-                    val monthStr = parentName.replace("월", "").trim()
-                    File(baseRestoreFolder, "${yearStr}년 ${monthStr}월")
+                file.walkTopDown().filter { it.isFile }.forEach { it.delete() }
+                file.walkBottomUp().filter { it.isDirectory && it != file }.forEach { it.delete() }
+                file.delete()
+                Toast.makeText(this, "'${file.name}' 폴더를 복원했어요!", Toast.LENGTH_SHORT).show()
+            } else {
+                val parentName = file.parentFile?.name ?: ""
+                val targetFolder = when {
+                    parentName.matches(Regex("\\d{4}년 \\d{1,2}월")) -> File(baseRestoreFolder, parentName)
+                    else -> baseRestoreFolder
                 }
-                // 그 외: 기본 복원 폴더로
-                else -> baseRestoreFolder
+                if (!targetFolder.exists()) targetFolder.mkdirs()
+                file.copyTo(File(targetFolder, file.name), overwrite = true)
+                file.delete()
+                Toast.makeText(this, "'${file.name}' 을 복원했어요!", Toast.LENGTH_SHORT).show()
             }
 
-            if (!targetFolder.exists()) targetFolder.mkdirs()
-            file.copyTo(File(targetFolder, file.name), overwrite = true)
-            file.delete()
-            Toast.makeText(this, "'${file.name}' 을 복원했어요!", Toast.LENGTH_SHORT).show()
-            // ✅ 복원 후 휴지통 목록 갱신
+            currentViewFolder = null
             loadFiles()
 
         } catch (e: Exception) {
@@ -162,13 +203,14 @@ class TrashActivity : AppCompatActivity() {
         }
     }
 
-    private fun deleteFile(file: File) {
+    private fun deleteItem(file: File) {
         AlertDialog.Builder(this)
             .setTitle("완전 삭제")
             .setMessage("${file.name} 을 완전히 삭제할까요?")
             .setPositiveButton("삭제") { _, _ ->
-                file.delete()
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
                 fileList.remove(file)
+                tvTitle.text = "${fileList.size}개"
                 fileAdapter.notifyDataSetChanged()
                 Toast.makeText(this, "삭제됐어요!", Toast.LENGTH_SHORT).show()
             }
@@ -198,6 +240,9 @@ class TrashActivity : AppCompatActivity() {
             fileName.endsWith(".xls", ignoreCase = true) -> "application/vnd.ms-excel"
             fileName.endsWith(".xlsx", ignoreCase = true) ->
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName.endsWith(".jpg", ignoreCase = true) ||
+                    fileName.endsWith(".jpeg", ignoreCase = true) -> "image/jpeg"
+            fileName.endsWith(".png", ignoreCase = true) -> "image/png"
             else -> "application/octet-stream"
         }
     }

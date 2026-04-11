@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -16,6 +15,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -29,7 +30,7 @@ import java.util.Locale
 class PhotoActivity : AppCompatActivity() {
 
     private lateinit var recyclerView: RecyclerView
-    private lateinit var photoAdapter: PhotoAdapter
+    private lateinit var fileAdapter: FileAdapter
     private lateinit var tvTitle: TextView
     private lateinit var tvSortIcon: TextView
     private lateinit var tvPhotoCount: TextView
@@ -38,7 +39,11 @@ class PhotoActivity : AppCompatActivity() {
     private var currentPhotoFile: File? = null
     private var selectedTag = "기타"
     private val folderName = "site_photos"
-    private var isGridView = true  // true = 그리드(기본), false = 리스트
+    private var isGridView = false
+    private var currentViewFolder: File? = null
+
+    private var isOldFoldersExpanded = false
+    private val allMonthFolders = mutableListOf<File>()
 
     private val cameraLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -63,14 +68,12 @@ class PhotoActivity : AppCompatActivity() {
             } else {
                 result.data?.data?.let { uris.add(it) }
             }
-
             val finalUris = if (uris.size > 20) {
                 Toast.makeText(this, "20장 초과! 앞의 20장만 불러올게요.", Toast.LENGTH_SHORT).show()
                 uris.take(20)
             } else {
                 uris
             }
-
             if (finalUris.size == 1) {
                 savePhotoFromUri(finalUris[0], System.currentTimeMillis())
                     ?.let { showTagDialog(it) }
@@ -84,7 +87,7 @@ class PhotoActivity : AppCompatActivity() {
                     }
                 }
                 Toast.makeText(this, "${successCount}장 추가 완료!", Toast.LENGTH_SHORT).show()
-                loadPhotos()
+                loadMonthFolders()
             }
         }
     }
@@ -93,29 +96,52 @@ class PhotoActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_photo)
 
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.navBarSpacer)) { view, insets ->
+            val navBarHeight = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            val params = view.layoutParams
+            params.height = navBarHeight
+            view.layoutParams = params
+            insets
+        }
+
         tvTitle = findViewById(R.id.tvTitle)
         tvSortIcon = findViewById(R.id.tvSortIcon)
         tvPhotoCount = findViewById(R.id.tvPhotoCount)
         tvViewToggleIcon = findViewById(R.id.tvViewToggleIcon)
         recyclerView = findViewById(R.id.recyclerPhotos)
+        recyclerView.layoutManager = LinearLayoutManager(this)
 
-        // ✅ 기본 그리드 3열로 시작
-        recyclerView.layoutManager = GridLayoutManager(this, 3)
+        tvViewToggleIcon.text = "⊞"
 
-        photoAdapter = PhotoAdapter(
+        fileAdapter = FileAdapter(
             photoList,
-            onClick = { file -> openPhotoDetail(file) },
-            onLongClick = { file -> showPhotoOptions(file) }
+            onClick = { file ->
+                when {
+                    file.name.startsWith("▶") || file.name.startsWith("▲") -> {
+                        isOldFoldersExpanded = !isOldFoldersExpanded
+                        applyToggleToFileList()
+                    }
+                    file.isDirectory -> {
+                        currentViewFolder = file
+                        loadPhotosInFolder(file)
+                    }
+                    else -> openPhotoDetail(file)
+                }
+            },
+            onLongClick = { file ->
+                if (!file.name.startsWith("▶") && !file.name.startsWith("▲")) {
+                    if (file.isDirectory) showFolderOptions(file)
+                    else showPhotoOptions(file)
+                }
+            }
         )
-        recyclerView.adapter = photoAdapter
+        recyclerView.adapter = fileAdapter
 
-        // ✅ 기본 그리드 상태 → 버튼에 ☰ 표시 (리스트로 바꾸라는 뜻)
-        tvViewToggleIcon.text = "☰"
+        fixDuplicateMonthFolder()
+        deleteOldEmptyMonthFolders()
+        createMonthFoldersIfNotExist()
+        loadMonthFolders()
 
-        checkAndArchiveOldPhotos()
-        checkAndDeleteOldTrash()
-
-        // ✅ 버튼 1개로 그리드/리스트 토글
         findViewById<LinearLayout>(R.id.btnViewToggle).setOnClickListener {
             isGridView = !isGridView
             updateViewMode()
@@ -127,44 +153,309 @@ class PhotoActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        findViewById<LinearLayout>(R.id.btnArchive).setOnClickListener {
-            showArchiveDialog()
-        }
-
-        findViewById<LinearLayout>(R.id.btnTrash).setOnClickListener {
-            val intent = Intent(this, TrashActivity::class.java)
-            intent.putExtra("folderName", folderName)
-            startActivity(intent)
-        }
-
         findViewById<LinearLayout>(R.id.btnAddPhoto).setOnClickListener {
             showPhotoSourceDialog()
         }
 
+        findViewById<LinearLayout>(R.id.btnImportant).setOnClickListener {
+            val importantPath = File(File(filesDir, folderName), "important").absolutePath
+            val restorePath = File(filesDir, folderName).absolutePath
+            val intent = Intent(this, ImportantDocsActivity::class.java)
+            intent.putExtra("folderName", folderName)
+            intent.putExtra("importantPath", importantPath)
+            intent.putExtra("restorePath", restorePath)
+            startActivity(intent)
+        }
+
+        findViewById<LinearLayout>(R.id.btnArchive).setOnClickListener {
+            val archivePath = File(File(filesDir, folderName), "archive").absolutePath
+            val restorePath = File(filesDir, folderName).absolutePath
+            val intent = Intent(this, ArchiveActivity::class.java)
+            intent.putExtra("folderName", folderName)
+            intent.putExtra("archivePath", archivePath)
+            intent.putExtra("restorePath", restorePath)
+            startActivity(intent)
+        }
+
+        findViewById<LinearLayout>(R.id.btnTrash).setOnClickListener {
+            val trashPath = File(File(filesDir, folderName), "trash").absolutePath
+            val restorePath = File(filesDir, folderName).absolutePath
+            val intent = Intent(this, TrashActivity::class.java)
+            intent.putExtra("folderName", folderName)
+            intent.putExtra("trashPath", trashPath)
+            intent.putExtra("restorePath", restorePath)
+            startActivity(intent)
+        }
+
         findViewById<LinearLayout>(R.id.btnSort).setOnClickListener {
-            photoAdapter.isDescending = !photoAdapter.isDescending
-            tvSortIcon.text = if (photoAdapter.isDescending) "↓" else "↑"
-            photoAdapter.sortPhotos()
+            fileAdapter.isDescending = !fileAdapter.isDescending
+            tvSortIcon.text = if (fileAdapter.isDescending) "↓" else "↑"
+            fileAdapter.sortFiles()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        loadPhotos()
+        if (currentViewFolder != null) loadPhotosInFolder(currentViewFolder!!)
+        else loadMonthFolders()
     }
 
-    // ✅ 버튼 1개로 그리드/리스트 전환
-    // 그리드 상태 → 버튼에 ☰ (리스트로 바꾸라는 뜻)
-    // 리스트 상태 → 버튼에 ⊞ (그리드로 바꾸라는 뜻)
+    override fun onBackPressed() {
+        if (currentViewFolder != null) {
+            currentViewFolder = null
+            loadMonthFolders()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     private fun updateViewMode() {
         if (isGridView) {
             recyclerView.layoutManager = GridLayoutManager(this, 3)
             tvViewToggleIcon.text = "☰"
+            fileAdapter.isGridView = true
         } else {
             recyclerView.layoutManager = LinearLayoutManager(this)
             tvViewToggleIcon.text = "⊞"
+            fileAdapter.isGridView = false
         }
-        photoAdapter.notifyDataSetChanged()
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun fixDuplicateMonthFolder() {
+        val baseFolder = File(filesDir, folderName)
+        if (!baseFolder.exists()) return
+        baseFolder.listFiles()
+            ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{2}월")) }
+            ?.forEach { folder ->
+                val regex = Regex("(\\d{4})년 (\\d{2})월")
+                val match = regex.find(folder.name) ?: return@forEach
+                val year = match.groupValues[1]
+                val month = match.groupValues[2].toInt()
+                val correctName = "${year}년 ${month}월"
+                val correctFolder = File(baseFolder, correctName)
+                if (folder.name != correctName) {
+                    if (!correctFolder.exists()) correctFolder.mkdirs()
+                    folder.walkTopDown().forEach { file ->
+                        if (file.isFile) {
+                            val relativePath = file.relativeTo(folder).path
+                            val destFile = File(correctFolder, relativePath)
+                            destFile.parentFile?.mkdirs()
+                            file.copyTo(destFile, overwrite = true)
+                        }
+                    }
+                    deleteFolderCompletely(folder)
+                }
+            }
+    }
+
+    private fun createMonthFoldersIfNotExist() {
+        val prefs = getSharedPreferences("photo_prefs", MODE_PRIVATE)
+        val now = Calendar.getInstance()
+        val currentYear = now.get(Calendar.YEAR)
+        val currentMonth = now.get(Calendar.MONTH) + 1
+        val currentTotal = currentYear * 12 + currentMonth
+        val baseFolder = File(filesDir, folderName)
+        for (offset in -3..2) {
+            val cal = Calendar.getInstance()
+            cal.add(Calendar.MONTH, offset)
+            val y = cal.get(Calendar.YEAR)
+            val m = cal.get(Calendar.MONTH) + 1
+            val monthFolder = File(baseFolder, "${y}년 ${m}월")
+            if (!monthFolder.exists()) monthFolder.mkdirs()
+        }
+        if (prefs.getInt("last_created_total", -1) != currentTotal) {
+            prefs.edit().putInt("last_created_total", currentTotal).apply()
+        }
+    }
+
+    private fun deleteOldEmptyMonthFolders() {
+        val baseFolder = File(filesDir, folderName)
+        if (!baseFolder.exists()) return
+        val now = Calendar.getInstance()
+        val currentTotal = now.get(Calendar.YEAR) * 12 + (now.get(Calendar.MONTH) + 1)
+        baseFolder.listFiles()
+            ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
+            ?.forEach { folder ->
+                val regex = Regex("(\\d{4})년 (\\d{1,2})월")
+                val match = regex.find(folder.name) ?: return@forEach
+                val folderYear = match.groupValues[1].toInt()
+                val folderMonth = match.groupValues[2].toInt()
+                val folderTotal = folderYear * 12 + folderMonth
+                val monthsAgo = currentTotal - folderTotal
+                if (monthsAgo > 3) {
+                    val hasFiles = folder.walkTopDown().any { it.isFile }
+                    if (!hasFiles) deleteFolderCompletely(folder)
+                }
+            }
+    }
+
+    private fun shouldHideInToggle(folderName: String): Boolean {
+        return try {
+            val regex = Regex("(\\d{4})년 (\\d{1,2})월")
+            val match = regex.find(folderName) ?: return false
+            val folderYear = match.groupValues[1].toInt()
+            val folderMonth = match.groupValues[2].toInt()
+            val folderTotal = folderYear * 12 + folderMonth
+            val now = Calendar.getInstance()
+            val currentTotal = now.get(Calendar.YEAR) * 12 + (now.get(Calendar.MONTH) + 1)
+            folderTotal < currentTotal || folderTotal > currentTotal + 2
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun applyToggleToFileList() {
+        photoList.clear()
+        val visibleFolders = allMonthFolders.filter { !shouldHideInToggle(it.name) }
+        val hiddenFolders = allMonthFolders.filter { shouldHideInToggle(it.name) }
+        photoList.addAll(visibleFolders)
+        if (hiddenFolders.isNotEmpty()) {
+            val toggleLabel = if (isOldFoldersExpanded)
+                "▲ 이전 기록 닫기 (${hiddenFolders.size}개)"
+            else
+                "▶ 이전 기록 보기 (${hiddenFolders.size}개)"
+            val baseFolder = File(filesDir, folderName)
+            val toggleFile = File(baseFolder, toggleLabel)
+            photoList.add(toggleFile)
+            if (isOldFoldersExpanded) photoList.addAll(hiddenFolders)
+        }
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun loadMonthFolders() {
+        val baseFolder = File(filesDir, folderName)
+        allMonthFolders.clear()
+        if (baseFolder.exists()) {
+            val folders = baseFolder.listFiles()
+                ?.filter { it.isDirectory && it.name.matches(Regex("\\d{4}년 \\d{1,2}월")) }
+                ?.sortedByDescending { it.name }
+                ?: emptyList()
+            allMonthFolders.addAll(folders)
+        }
+        currentViewFolder = null
+        val totalPhotoCount = countAllFiles(File(filesDir, folderName))
+        tvTitle.text = "현장 사진"
+        tvPhotoCount.text = "현장 사진 (${totalPhotoCount}장)"
+        applyToggleToFileList()
+    }
+
+    private fun loadPhotosInFolder(folder: File) {
+        photoList.clear()
+        if (folder.exists()) {
+            folder.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".jpg") }
+                .sortedByDescending { it.lastModified() }
+                .forEach { photoList.add(it) }
+        }
+        tvTitle.text = folder.name
+        tvPhotoCount.text = "${folder.name} (${photoList.size}장)"
+        fileAdapter.notifyDataSetChanged()
+    }
+
+    private fun countAllFiles(folder: File): Int {
+        if (!folder.exists()) return 0
+        return folder.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".jpg") }
+            .filter { !it.absolutePath.contains("trash") }
+            .filter { !it.absolutePath.contains("archive") }
+            .filter { !it.absolutePath.contains("important") }
+            .count()
+    }
+
+    private fun deleteFolderCompletely(folder: File): Boolean {
+        if (!folder.exists()) return true
+        try {
+            folder.walkTopDown().filter { it.isFile }.forEach { it.delete() }
+            folder.walkBottomUp()
+                .filter { it.isDirectory && it.absolutePath != folder.absolutePath }
+                .forEach { it.delete() }
+            val result = folder.delete()
+            if (!result && folder.exists()) {
+                Runtime.getRuntime().exec("rm -rf ${folder.absolutePath}")
+                Thread.sleep(100)
+            }
+            return !folder.exists()
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    private fun showFolderOptions(folder: File) {
+        val options = arrayOf("중요 보관함으로 이동", "지난사진으로 이동", "휴지통으로 이동")
+        AlertDialog.Builder(this)
+            .setTitle(folder.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> moveFolderToImportant(folder)
+                    1 -> moveFolderToArchive(folder)
+                    2 -> moveFolderToTrash(folder)
+                }
+            }
+            .setNegativeButton("취소", null).show()
+    }
+
+    private fun moveFolderToImportant(folder: File) {
+        try {
+            val importantFolder = File(File(filesDir, folderName), "important/${folder.name}")
+            importantFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(importantFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToArchive(folder: File) {
+        try {
+            val archiveFolder = File(File(filesDir, folderName), "archive/${folder.name}")
+            archiveFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(archiveFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "지난사진 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToTrash(folder: File) {
+        try {
+            val trashFolder = File(File(filesDir, folderName), "trash/${folder.name}")
+            trashFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(trashFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openPhotoDetail(file: File) {
@@ -227,13 +518,19 @@ class PhotoActivity : AppCompatActivity() {
 
     private fun createPhotoFile(): File {
         val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.KOREA).format(Date())
-        val folder = File(File(filesDir, folderName), getCurrentMonthFolder())
+        val now = Calendar.getInstance()
+        val y = now.get(Calendar.YEAR)
+        val m = now.get(Calendar.MONTH) + 1
+        val folder = File(File(filesDir, folderName), "${y}년 ${m}월")
         if (!folder.exists()) folder.mkdirs()
         return File(folder, "PHOTO_${dateStr}_임시.jpg")
     }
 
     private fun getCurrentMonthFolder(): String {
-        return SimpleDateFormat("yyyy년 MM월", Locale.KOREA).format(Date())
+        val now = Calendar.getInstance()
+        val y = now.get(Calendar.YEAR)
+        val m = now.get(Calendar.MONTH) + 1
+        return "${y}년 ${m}월"
     }
 
     private fun savePhotoFromUri(uri: Uri, uniqueTime: Long = System.currentTimeMillis()): File? {
@@ -329,96 +626,56 @@ class PhotoActivity : AppCompatActivity() {
             }
             val newFile = File(folder, newName)
             if (photoFile.exists()) photoFile.renameTo(newFile)
-            loadPhotos()
+            loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "저장 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun showPhotoOptions(file: File) {
-        val options = arrayOf("공유하기", "지난사진으로 이동", "휴지통으로 이동")
+        val options = arrayOf("공유하기", "중요 보관함으로 이동", "지난사진으로 이동", "휴지통으로 이동")
         AlertDialog.Builder(this)
             .setTitle(file.name)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> sharePhoto(file)
-                    1 -> showMoveToArchiveMonthPicker(file)
-                    2 -> moveToTrash(file)
+                    1 -> moveToImportant(file)
+                    2 -> moveToArchive(file)
+                    3 -> moveToTrash(file)
                 }
             }
             .setNegativeButton("취소", null)
             .show()
     }
 
-    private fun showMoveToArchiveMonthPicker(file: File) {
-        val recentMonths = mutableListOf<String>()
-        for (i in -1..4) {
-            val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i + 1)
-            recentMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
+    private fun moveToImportant(file: File) {
+        try {
+            val importantFolder = File(File(filesDir, folderName), "important")
+            if (!importantFolder.exists()) importantFolder.mkdirs()
+            file.copyTo(File(importantFolder, file.name), overwrite = true)
+            file.delete()
+            Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            if (currentViewFolder != null) loadPhotosInFolder(currentViewFolder!!)
+            else loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-        val oldMonths = mutableListOf<String>()
-        for (i in 6..36) {
-            val cal = Calendar.getInstance()
-            cal.add(Calendar.MONTH, -i + 1)
-            oldMonths.add("${cal.get(Calendar.YEAR)}년 ${cal.get(Calendar.MONTH) + 1}월")
-        }
-        val dialogView = layoutInflater.inflate(R.layout.dialog_month_picker, null)
-        val containerRecent = dialogView.findViewById<LinearLayout>(R.id.containerRecent)
-        val containerOld = dialogView.findViewById<LinearLayout>(R.id.containerOld)
-        val btnToggle = dialogView.findViewById<Button>(R.id.btnToggle)
-        val scrollOld = dialogView.findViewById<android.widget.ScrollView>(R.id.scrollOld)
-        val archiveDialog = AlertDialog.Builder(this)
-            .setTitle("지난사진 보관함 - 월 선택")
-            .setView(dialogView)
-            .setNegativeButton("취소", null)
-            .create()
-        recentMonths.forEach { month ->
-            val btn = Button(this).apply {
-                text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.setMargins(0, 0, 0, 16) }
-            }
-            btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
-            containerRecent.addView(btn)
-        }
-        scrollOld.visibility = View.GONE
-        oldMonths.forEach { month ->
-            val btn = Button(this).apply {
-                text = month; textSize = 15f
-                setTextColor(android.graphics.Color.WHITE)
-                backgroundTintList = android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#1E3A8A"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.setMargins(0, 0, 0, 16) }
-            }
-            btn.setOnClickListener { moveToArchive(file, month); archiveDialog.dismiss() }
-            containerOld.addView(btn)
-        }
-        var isOldVisible = false
-        btnToggle.setOnClickListener {
-            isOldVisible = !isOldVisible
-            scrollOld.visibility = if (isOldVisible) View.VISIBLE else View.GONE
-            btnToggle.text = if (isOldVisible) "▲ 이전 기록 닫기" else "▶ 이전 기록 보기"
-        }
-        archiveDialog.show()
     }
 
-    private fun moveToArchive(file: File, monthStr: String) {
+    private fun moveToArchive(file: File) {
         try {
-            val archiveFolder = File(File(File(filesDir, folderName), "archive"), monthStr)
+            val monthFolderName = file.parentFile?.name ?: ""
+            val archiveFolder = if (monthFolderName.matches(Regex("\\d{4}년 \\d{1,2}월"))) {
+                File(File(filesDir, folderName), "archive/$monthFolderName")
+            } else {
+                File(File(filesDir, folderName), "archive")
+            }
             if (!archiveFolder.exists()) archiveFolder.mkdirs()
             file.copyTo(File(archiveFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "지난사진 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadPhotos()
+            if (currentViewFolder != null) loadPhotosInFolder(currentViewFolder!!)
+            else loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -431,7 +688,8 @@ class PhotoActivity : AppCompatActivity() {
             file.copyTo(File(trashFolder, file.name), overwrite = true)
             file.delete()
             Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
-            loadPhotos()
+            if (currentViewFolder != null) loadPhotosInFolder(currentViewFolder!!)
+            else loadMonthFolders()
         } catch (e: Exception) {
             Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
@@ -449,92 +707,6 @@ class PhotoActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "공유 실패: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun loadPhotos() {
-        val baseFolder = File(filesDir, folderName)
-        photoList.clear()
-        if (baseFolder.exists()) {
-            baseFolder.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".jpg") }
-                .filter { !it.absolutePath.contains("trash") }
-                .filter { !it.absolutePath.contains("archive") }
-                .sortedByDescending { it.lastModified() }
-                .let { photoList.addAll(it) }
-        }
-        tvTitle.text = "현장 사진"
-        tvPhotoCount.text = "현장 사진 (${photoList.size}장)"
-        photoAdapter.notifyDataSetChanged()
-    }
-
-    private fun showArchiveDialog() {
-        val archiveFolder = File(File(filesDir, folderName), "archive")
-        if (!archiveFolder.exists() || archiveFolder.listFiles().isNullOrEmpty()) {
-            Toast.makeText(this, "지난사진 보관함이 비어있어요", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val years = archiveFolder.listFiles()
-            ?.filter { it.isDirectory }?.map { it.name }
-            ?.sortedDescending()?.toTypedArray() ?: return
-        AlertDialog.Builder(this)
-            .setTitle("지난사진 보관함")
-            .setItems(years) { _, which -> showArchiveMonthDialog(years[which]) }
-            .setNegativeButton("닫기", null).show()
-    }
-
-    private fun showArchiveMonthDialog(year: String) {
-        val archiveFolder = File(File(File(filesDir, folderName), "archive"), year)
-        val months = archiveFolder.listFiles()
-            ?.filter { it.isDirectory }?.map { it.name }
-            ?.sortedDescending()?.toTypedArray() ?: return
-        AlertDialog.Builder(this)
-            .setTitle("$year 지난사진")
-            .setItems(months) { _, which -> loadArchivePhotos(year, months[which]) }
-            .setNegativeButton("뒤로", null).show()
-    }
-
-    private fun loadArchivePhotos(year: String, month: String) {
-        val folder = File(File(File(File(filesDir, folderName), "archive"), year), month)
-        photoList.clear()
-        if (folder.exists()) {
-            folder.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".jpg") }
-                .sortedByDescending { it.lastModified() }
-                .let { photoList.addAll(it) }
-        }
-        tvTitle.text = "$year $month 보관함"
-        tvPhotoCount.text = "$year $month 보관함 (${photoList.size}장)"
-        photoAdapter.notifyDataSetChanged()
-    }
-
-    private fun checkAndArchiveOldPhotos() {
-        val calendar = Calendar.getInstance()
-        val currentYear = calendar.get(Calendar.YEAR)
-        val currentMonth = calendar.get(Calendar.MONTH) + 1
-        val baseFolder = File(filesDir, folderName)
-        if (!baseFolder.exists()) return
-        baseFolder.listFiles()
-            ?.filter { it.isDirectory && it.name.contains("년") }
-            ?.forEach { monthFolder ->
-                try {
-                    val parts = monthFolder.name.replace("년 ", "-").replace("월", "").split("-")
-                    val year = parts[0].trim().toInt()
-                    val month = parts[1].trim().toInt()
-                    if (year < currentYear || (year == currentYear && month < currentMonth)) {
-                        val archiveFolder = File(
-                            File(File(baseFolder, "archive"), "${year}년"), "${month}월"
-                        )
-                        if (!archiveFolder.exists()) {
-                            archiveFolder.mkdirs()
-                            monthFolder.listFiles()?.forEach { file ->
-                                file.copyTo(File(archiveFolder, file.name), overwrite = true)
-                                file.delete()
-                            }
-                            monthFolder.delete()
-                        }
-                    }
-                } catch (e: Exception) { }
-            }
     }
 
     private fun checkAndDeleteOldTrash() {

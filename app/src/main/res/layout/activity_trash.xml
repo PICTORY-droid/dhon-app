@@ -27,7 +27,7 @@
 
     </LinearLayout>
 
-    <!-- 안내 문구 -->
+    <!-- 안내 문구 + 개수 표시 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -36,14 +36,26 @@
         android:paddingLeft="20dp"
         android:paddingRight="20dp"
         android:paddingTop="12dp"
-        android:paddingBottom="12dp">
+        android:paddingBottom="12dp"
+        android:gravity="center_vertical">
 
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:text="ℹ️  휴지통 자료들은 1년이 지나면 영구 삭제됩니다"
             android:textColor="@color/text_secondary"
             android:textSize="12sp"/>
+
+        <!-- ✅ tvTitle 추가: 휴지통 개수 표시 -->
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0개"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold"/>
 
     </LinearLayout>
 

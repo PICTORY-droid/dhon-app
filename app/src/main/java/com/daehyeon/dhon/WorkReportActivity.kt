@@ -127,7 +127,8 @@ class WorkReportActivity : AppCompatActivity() {
             },
             onLongClick = { file ->
                 if (!file.name.startsWith("▶") && !file.name.startsWith("▲")) {
-                    if (!file.isDirectory) showFileOptions(file)
+                    if (file.isDirectory) showFolderOptions(file)
+                    else showFileOptions(file)
                 }
             }
         )
@@ -215,6 +216,107 @@ class WorkReportActivity : AppCompatActivity() {
         fileAdapter.notifyDataSetChanged()
     }
 
+    private fun showFolderOptions(folder: File) {
+        val options = arrayOf("중요 보관함으로 이동", "지난서류로 이동", "휴지통으로 이동")
+        AlertDialog.Builder(this)
+            .setTitle(folder.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> moveFolderToImportant(folder)
+                    1 -> moveFolderToArchive(folder)
+                    2 -> moveFolderToTrash(folder)
+                }
+            }
+            .setNegativeButton("취소", null).show()
+    }
+
+    private fun deleteFolderCompletely(folder: File): Boolean {
+        if (!folder.exists()) return true
+        try {
+            // 1단계: 안에 있는 모든 파일 삭제
+            folder.walkTopDown()
+                .filter { it.isFile }
+                .forEach { it.delete() }
+            // 2단계: 빈 하위 폴더 삭제 (깊은 곳부터)
+            folder.walkBottomUp()
+                .filter { it.isDirectory && it.absolutePath != folder.absolutePath }
+                .forEach { it.delete() }
+            // 3단계: 폴더 자체 삭제
+            val result = folder.delete()
+            // 4단계: 그래도 남아있으면 강제 삭제
+            if (!result && folder.exists()) {
+                Runtime.getRuntime().exec("rm -rf ${folder.absolutePath}")
+                Thread.sleep(100)
+            }
+            return !folder.exists()
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    private fun moveFolderToImportant(folder: File) {
+        try {
+            val importantFolder = File(File(filesDir, folderName), "important/${folder.name}")
+            importantFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(importantFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "중요 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToArchive(folder: File) {
+        try {
+            val archiveFolder = File(File(filesDir, folderName), "archive/${folder.name}")
+            archiveFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(archiveFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "지난서류 보관함으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun moveFolderToTrash(folder: File) {
+        try {
+            val trashFolder = File(File(filesDir, folderName), "trash/${folder.name}")
+            trashFolder.mkdirs()
+            folder.walkTopDown().forEach { file ->
+                if (file.isFile) {
+                    val relativePath = file.relativeTo(folder).path
+                    val destFile = File(trashFolder, relativePath)
+                    destFile.parentFile?.mkdirs()
+                    file.copyTo(destFile, overwrite = true)
+                }
+            }
+            deleteFolderCompletely(folder)
+            createMonthFoldersIfNotExist()
+            Toast.makeText(this, "휴지통으로 이동했어요!", Toast.LENGTH_SHORT).show()
+            loadMonthFolders()
+        } catch (e: Exception) {
+            Toast.makeText(this, "이동 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun createMonthFoldersIfNotExist() {
         val prefs = getSharedPreferences("work_report_prefs", MODE_PRIVATE)
         val now = Calendar.getInstance()
@@ -261,7 +363,7 @@ class WorkReportActivity : AppCompatActivity() {
                 val folderTotal = folderYear * 12 + folderMonth
                 if (folderTotal < keepFromTotal) {
                     val hasFiles = folder.walkTopDown().any { it.isFile }
-                    if (!hasFiles) folder.delete()
+                    if (!hasFiles) folder.deleteRecursively()
                 }
             }
     }

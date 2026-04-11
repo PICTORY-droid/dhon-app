@@ -15,48 +15,17 @@
         android:paddingTop="36dp"
         android:paddingBottom="16dp"
         android:paddingLeft="24dp"
-        android:paddingRight="16dp"
+        android:paddingRight="24dp"
         android:gravity="center_vertical">
 
         <TextView
             android:id="@+id/tvTitle"
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="현장 사진"
+            android:text="📷 현장 사진"
             android:textColor="@color/on_primary"
             android:textSize="22sp"
             android:textStyle="bold"/>
-
-        <!-- 홈 버튼 -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            app:cardCornerRadius="18dp"
-            app:cardElevation="0dp"
-            app:cardBackgroundColor="#33FFFFFF">
-            <LinearLayout
-                android:id="@+id/btnHome"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:paddingLeft="12dp"
-                android:paddingRight="12dp">
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🏠"
-                    android:textSize="14sp"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=" 홈"
-                    android:textSize="13sp"
-                    android:textColor="@color/on_primary"
-                    android:textStyle="bold"/>
-            </LinearLayout>
-        </androidx.cardview.widget.CardView>
 
     </LinearLayout>
 
@@ -98,7 +67,7 @@
                     android:id="@+id/tvViewToggleIcon"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="☰"
+                    android:text="⊞"
                     android:textSize="18sp"
                     android:textColor="@color/text_primary"
                     android:textStyle="bold"/>
@@ -136,9 +105,11 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="4dp"/>
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:clipToPadding="false"/>
 
-    <!-- 하단 버튼 영역 -->
+    <!-- 하단 고정 버튼 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -146,56 +117,130 @@
         android:background="@color/surface"
         android:paddingLeft="12dp"
         android:paddingRight="12dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:elevation="8dp">
 
-        <!-- 지난사진 버튼 -->
+        <!-- 홈 버튼 -->
         <androidx.cardview.widget.CardView
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp"
             app:cardCornerRadius="10dp"
             app:cardElevation="0dp"
-            app:cardBackgroundColor="#F3F4F6">
+            app:cardBackgroundColor="@color/surface_variant">
             <LinearLayout
-                android:id="@+id/btnArchive"
+                android:id="@+id/btnHome"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center">
+                android:gravity="center"
+                android:orientation="vertical">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="📁 지난사진"
-                    android:textColor="#374151"
-                    android:textSize="12sp"
+                    android:text="🏠"
+                    android:textSize="18sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="홈"
+                    android:textSize="10sp"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"/>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- 사진 추가 버튼 -->
+        <!-- 추가 버튼 -->
         <androidx.cardview.widget.CardView
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp"
             app:cardCornerRadius="10dp"
             app:cardElevation="0dp"
-            app:cardBackgroundColor="#E5E7EB">
+            app:cardBackgroundColor="@color/surface_variant">
             <LinearLayout
                 android:id="@+id/btnAddPhoto"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center">
+                android:gravity="center"
+                android:orientation="vertical">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="+ 추가"
-                    android:textColor="#374151"
-                    android:textSize="12sp"
+                    android:text="➕"
+                    android:textSize="18sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="추가"
+                    android:textSize="10sp"
+                    android:textColor="@color/text_primary"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 중요 버튼 -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp"
+            app:cardCornerRadius="10dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/surface_variant">
+            <LinearLayout
+                android:id="@+id/btnImportant"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⭐"
+                    android:textSize="18sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="중요"
+                    android:textSize="10sp"
+                    android:textColor="@color/text_primary"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 지난사진 버튼 -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp"
+            app:cardCornerRadius="10dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/surface_variant">
+            <LinearLayout
+                android:id="@+id/btnArchive"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📂"
+                    android:textSize="18sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="지난사진"
+                    android:textSize="10sp"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"/>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -203,28 +248,40 @@
         <!-- 휴지통 버튼 -->
         <androidx.cardview.widget.CardView
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="52dp"
             android:layout_weight="1"
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp"
             app:cardCornerRadius="10dp"
             app:cardElevation="0dp"
-            app:cardBackgroundColor="#FEE2E2">
+            app:cardBackgroundColor="@color/surface_variant">
             <LinearLayout
                 android:id="@+id/btnTrash"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:gravity="center">
+                android:gravity="center"
+                android:orientation="vertical">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🗑 휴지통"
-                    android:textColor="#B91C1C"
-                    android:textSize="12sp"
+                    android:text="🗑️"
+                    android:textSize="18sp"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="휴지통"
+                    android:textSize="10sp"
+                    android:textColor="@color/text_primary"
                     android:textStyle="bold"/>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
     </LinearLayout>
+
+    <View
+        android:id="@+id/navBarSpacer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="@color/surface"/>
 
 </LinearLayout>
