@@ -73,7 +73,8 @@
 
 ## 문의
 
-**다현건설 현장관리자** 김영일
+**개발자 PICTORY DROID**  
+pictory.droid@gmail.com
 
 ---
 
